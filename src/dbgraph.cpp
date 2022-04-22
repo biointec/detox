@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -29,8 +29,17 @@ DSNode* SSNode::nodes = NULL;
 
 using namespace std;
 
+std::ostream &operator<<(std::ostream &out, const NodeChain& nc)
+{
+        for (size_t i = 0; i < nc.size(); i++)
+                out << nc[i] << "\t";
+        out << "(" << nc.getCount() << ")";
+        return out;
+}
+
 bool DBGraph::consecutiveNPP(const NodePosPair& left,
-                             const NodePosPair& right) const
+                             const NodePosPair& right,
+                             size_t offset) const
 {
         // return false if one of the npps is invalid
         if (!left.isValid() || !right.isValid())
@@ -38,20 +47,17 @@ bool DBGraph::consecutiveNPP(const NodePosPair& left,
 
         // left and right belong to the same node?
         if (left.getNodeID() == right.getNodeID())
-                if ((left.getPosition()+1) == right.getPosition())
+                if ((left.getPosition() + offset) == right.getPosition())
                         return true;
 
         // left and right belong to connected nodes?
-        SSNode leftNode = getSSNode(left.getNodeID());
-        if (leftNode.rightArc(right.getNodeID()) == NULL)
+        SSNode lNode = getSSNode(left.getNodeID());
+        if (lNode.rightArc(right.getNodeID()) == NULL)
                 return false;
 
-        // if so, make sure the left kmer is the last kmer in the left node
-        if (left.getPosition() != leftNode.getMarginalLength() - 1)
-                return false;
-
-        // if so, make sure the right kmer is the first kmer in the right node
-        return right.getPosition() == 0;
+        // make sure the distance is consistent
+        size_t dist = lNode.getMarginalLength() - left.getPosition() + right.getPosition();
+        return (offset == dist);
 }
 
 void DBGraph::writeBCalm (const string& filename)
@@ -291,12 +297,48 @@ void DBGraph::loadBinary(const std::string& filename)
         numValidArcs = numArcs;
 }
 
+void DBGraph::writeContigs(const std::string& filename) const
+{
+        ofstream ofs(filename.c_str());
+
+        size_t contigID = 0;
+        for (NodeID id = 1; id <= getNumNodes(); id++) {
+                SSNode n = getSSNode(id);
+                if (!n.isValid())
+                        continue;
+
+                //ofs << ">contig_" << contigID++ << "\n";
+                ofs << ">contig_" << id << "\n";
+                Util::writeSeqWrap(ofs, n.getSequence(), 60);
+        }
+}
+
+void DBGraph::getGraph(std::vector<NodeID>& nodes, std::vector<EdgeID>& edges)
+{
+        nodes.reserve(2 * getNumValidNodes());
+        edges.reserve(getNumValidArcs());
+
+        for (NodeID srcID = -numNodes; srcID <= numNodes; srcID++) {
+                if (srcID == 0)
+                        continue;
+                SSNode n = getSSNode(srcID);
+                if (!getSSNode(srcID).isValid())
+                        continue;
+                nodes.push_back(srcID);
+
+                for (ArcIt it = n.rightBegin(); it != n.rightEnd(); it++) {
+                        NodeID dstID = it->getNodeID();
+                        edges.push_back(make_pair(srcID, dstID));
+                }
+        }
+}
+
 void DBGraph::getSubgraph(NodeID seedNode, vector<NodeID>& nodes,
-                          vector<pair<NodeID, NodeID> >& edges,
-                          size_t maxDepth) const
+                          vector<EdgeID>& edges, size_t maxDepth) const
 {
         priority_queue<NodeDFS, vector<NodeDFS>, NodeDFSComp> todo;
         todo.push(NodeDFS(seedNode, 0));
+        set<NodeID> nodeSet;
 
         while (!todo.empty()) {
                 // get and erase the current node
@@ -308,23 +350,20 @@ void DBGraph::getSubgraph(NodeID seedNode, vector<NodeID>& nodes,
                 SSNode n = getSSNode(thisID);
 
                 // if the node was already handled, skip
-                if (n.getFlag1())
+                if (nodeSet.find(thisID) != nodeSet.end())
                         continue;
 
-                nodes.push_back(thisID);
+                nodeSet.insert(thisID);
 
                 // don't go any deeper if we've reached the maximum depth
-                if (thisDepth >= maxDepth) {
-                        n.setFlag1(true);
+                if (thisDepth >= maxDepth)
                         continue;
-                }
 
                 // process the right arcs
                 for (ArcIt it = n.rightBegin(); it != n.rightEnd(); it++) {
                         NodeID rightID = it->getNodeID();
-                        SSNode r = getSSNode(rightID);
-                        if (r.getFlag1())       // edge already added by r
-                                continue;
+                        if (nodeSet.find(rightID) != nodeSet.end())
+                                continue;       // edge already added by rightID
 
                         edges.push_back(make_pair(thisID, rightID));
                         todo.push(NodeDFS(rightID, thisDepth+1));
@@ -333,24 +372,19 @@ void DBGraph::getSubgraph(NodeID seedNode, vector<NodeID>& nodes,
                 // process the left arcs
                 for (ArcIt it = n.leftBegin(); it != n.leftEnd(); it++) {
                         NodeID leftID = it->getNodeID();
-                        SSNode l = getSSNode(leftID);
-                        if (l.getFlag1())       // edge already added by l
-                                continue;
+                        if (nodeSet.find(leftID) != nodeSet.end())
+                                continue;       // edge already added by leftID
 
                         edges.push_back(make_pair(leftID, thisID));
                         todo.push(NodeDFS(leftID, thisDepth + 1));
                 }
-
-                // mark this node as handled
-                n.setFlag1(true);
+                
         }
-
-        // reset all flags to false
-        for (auto it : nodes)
-                getSSNode(it).setFlag1(false);
+        
+        nodes = vector<NodeID>(nodeSet.begin(), nodeSet.end());
 }
 
-void DBGraph::getSubgraph(priority_queue<NodeRepDepth, vector<NodeRepDepth>,
+/*void DBGraph::getSubgraph(priority_queue<NodeRepDepth, vector<NodeRepDepth>,
                           NodeRepComp>& todo, set<NodeRep>& nodes,
                           set<EdgeRep>& edges, size_t maxDepth) const
 {
@@ -393,24 +427,25 @@ void DBGraph::getSubgraph(NodeRep seedNode, set<NodeRep>& nodes,
         // a queue containing nodeIDs to handle + their depth
         priority_queue<NodeRepDepth, vector<NodeRepDepth>, NodeRepComp> todo;
         todo.push(NodeRepDepth(seedNode, 0));
-
+        
         getSubgraph(todo, nodes, edges, maxDepth);
 }
-
+                          
 void DBGraph::getSubgraph(EdgeRep seedEdge, set<NodeRep>& nodes,
-                          set<EdgeRep>& edges, size_t maxDepth) const
+                        set<EdgeRep>& edges, size_t maxDepth) const
 {
         edges.insert(seedEdge);
         if (maxDepth == 0)
                 return;
-
+        
         // a queue containing nodeIDs to handle + their depth
         priority_queue<NodeRepDepth, vector<NodeRepDepth>, NodeRepComp> todo;
         todo.push(NodeRepDepth(seedEdge.getSrcID(), 1));
         todo.push(NodeRepDepth(seedEdge.getDstID(), 1));
-
+        
         getSubgraph(todo, nodes, edges, maxDepth);
-}
+}*/
+
 
 vector<NodeRep> DBGraph::getNodeReps(const string& filename) const
 {
@@ -513,6 +548,25 @@ vector<EdgeRep> DBGraph::getEdgeReps(size_t N) const
         return vector<EdgeRep>(edges.begin(), edges.begin() + N);
 }
 
+vector<EdgeRep> DBGraph::getLowCovEdges(double threshold) const
+{
+        vector<EdgeRep> edges;
+        edges.reserve(getNumValidArcs() / 2);   // roughly half of the nodes
+        for (NodeID id = -numNodes; id <= numNodes; id++) {
+                if (id == 0)
+                        continue;
+                SSNode n = getSSNode(id);
+                if (!n.isValid())
+                        continue;
+                for (ArcIt it = n.rightBegin(); it != n.rightEnd(); it++) {
+                        if (id <= -it->getNodeID() && it->getCov() <= threshold)
+                                edges.push_back(EdgeRep(id, it->getNodeID()));
+                }
+        }
+
+        return edges;
+}
+
 vector<NodeRep> DBGraph::getLowCovNodes(double threshold) const
 {
         vector<NodeRep> nodes;
@@ -529,10 +583,9 @@ vector<NodeRep> DBGraph::getLowCovNodes(double threshold) const
         return nodes;
 }
 
-vector<NodeRep> DBGraph::getLowCovTips(double threshold) const
+vector<NodeRep> DBGraph::getLowCovTips(double threshold, size_t maxLen) const
 {
         vector<NodeRep> nodes;
-        nodes.reserve(getNumValidNodes());
         for (size_t i = 1; i <= numNodes; i++) {
                 SSNode n = getSSNode(i);
                 if (!n.isValid())
@@ -540,6 +593,9 @@ vector<NodeRep> DBGraph::getLowCovTips(double threshold) const
 
                 if ((n.numLeftArcs() > 0) && (n.numRightArcs() > 0))
                         continue;       // not a tip
+
+                if ((maxLen != 0) && (n.getMarginalLength() > maxLen))
+                        continue;       // node too long
 
                 if (n.getAvgCov() <= threshold)
                         nodes.push_back(NodeRep(i));
@@ -551,14 +607,28 @@ vector<NodeRep> DBGraph::getLowCovTips(double threshold) const
 vector<NodeRep> DBGraph::getLowCovBubbles(double threshold) const
 {
         vector<NodeRep> nodes;
-        nodes.reserve(getNumValidNodes());
         for (size_t i = 1; i <= numNodes; i++) {
                 SSNode n = getSSNode(i);
                 if (!n.isValid())
                         continue;       // deleted node
 
-                if ((n.numLeftArcs() != 1) && (n.numRightArcs() != 1))
+                if ((n.numLeftArcs() != 1) || (n.numRightArcs() != 1))
                         continue;       // not a bubble
+
+                /*NodeID leftID = n.leftBegin()->getNodeID();
+                NodeID rightID = n.rightBegin()->getNodeID();
+
+                bool isBubble = false;  // find parallel path
+                SSNode l = getSSNode(leftID);
+                for (ArcIt it = l.rightBegin(); it != l.rightEnd(); it++) {
+                        if (it->getNodeID() == i)
+                                continue;
+                        if (edgeExists(EdgeRep(it->getNodeID(), rightID)))
+                                isBubble = true;
+                }
+
+                if (!isBubble)
+                        continue;*/
 
                 if (n.getMarginalLength() != Kmer::getK())
                         continue;       // not a bubble
@@ -584,10 +654,10 @@ void DBGraph::getNodeCovHist(map<int, double>& hist)
 void DBGraph::writeCytoscapeGraph(const std::string& filename,
                                   vector<NodeID> nodes,
                                   vector<pair<NodeID, NodeID> > edges,
-                                  const map<NodeRep, Multiplicity>& enm,
-                                  const map<EdgeRep, Multiplicity>& eem,
-                                  const map<NodeRep, int>& tnm,
-                                  const map<EdgeRep, int>& tem) const
+                                  const NodeMap<Multiplicity>& enm,
+                                  const EdgeMap<Multiplicity>& eem,
+                                  const NodeMap<int>& tnm,
+                                  const EdgeMap<int>& tem) const
 {
         // A) write all arcs
         ofstream ofs((filename + ".arcs").c_str());

@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -25,7 +25,7 @@
 #include "settings.h"
 #include "graphaln.h"
 #include "util.h"
-#include "readfile/fastafile.h"
+#include "readfile/fasta.h"
 
 using namespace std;
 
@@ -71,17 +71,16 @@ void RefComp::readFastaFile(const string& fastaFilename)
 {
         sequence.clear();
 
-        FastAFile ifs(false);
-        ifs.open(fastaFilename.c_str());
+        FastAReader reader(fastaFilename);
 
-        string read;
-        while (ifs.getNextRead(read))
-                sequence.push_back(read);
+        FastARecord record;
+        while (reader.getNextRecord(record))
+                sequence.push_back(record.getRead());
 
         cout << "File: " << fastaFilename << "\n";
         for (size_t i = 0; i < sequence.size(); i++) {
-                cout << "\tSequence " << i << " length: "
-                     << sequence[i].size();
+                //cout << "\tSequence " << i << " length: "
+                //     << sequence[i].size();
 
                 size_t nonACTG = 0;
                 for (size_t j = 0; j < sequence[i].size(); j++) {
@@ -90,16 +89,14 @@ void RefComp::readFastaFile(const string& fastaFilename)
                                 nonACTG++;
                 }
 
-                cout << " (" << nonACTG << " non-ACGT)" << endl;
+                //cout << " (" << nonACTG << " non-ACGT)" << endl;
         }
-
-        ifs.close();
 }
 
 void RefComp::alignSequence(const string& seq,
                             vector<AlnSegment>& segment) const
 {
-        /*segment.clear();
+        segment.clear();
         if (seq.size() < Kmer::getK())
                 return;         // sequence too short
 
@@ -145,7 +142,7 @@ void RefComp::alignSequence(const string& seq,
 
         // close open segment at the end of a sequence
         segment.back().setEnd(seq.size() + 1 - Kmer::getK(),
-                              prev.getNodeID(), prev.getPosition()+1);*/
+                              prev.getNodeID(), prev.getPosition()+1);
 }
 
 void RefComp::annotateBreakpoint(size_t i, const string& seq,
@@ -212,7 +209,7 @@ void RefComp::annotateBreakpoints(const string& seq,
                                   const string& output) const
 {
         const unsigned int& numThreads = settings.getNumThreads();
-        cout << "Number of threads: " << numThreads << endl;
+        //cout << "Number of threads: " << numThreads << endl;
 
         size_t targetWL = max<size_t>(1ull, segment.size() / 10 / numThreads);
         WorkLoadBalancer wlb(0, segment.size(), targetWL, output);
@@ -227,11 +224,12 @@ void RefComp::annotateBreakpoints(const string& seq,
         for_each(workerThreads.begin(), workerThreads.end(), mem_fn(&thread::join));
 }
 
-void RefComp::alignSequences()
+void RefComp::alignSequences(vector< vector<AlnSegment> >& alignment)
 {
         Util::startChrono();
         cout << "Aligning reference sequences to dBG... "; cout.flush();
-        vector< vector<AlnSegment> > alignment(sequence.size());
+        alignment.clear();
+        alignment.resize(sequence.size());
         for (size_t i = 0; i < sequence.size(); i++)
                 alignSequence(sequence[i], alignment[i]);
         cout << "done (" << Util::stopChronoStr() << ")" << endl;
@@ -245,9 +243,13 @@ void RefComp::alignSequences()
         for (size_t i = 0; i < sequence.size(); i++) {
                 Util::startChrono();
                 stringstream output;
-                output << "Annotating alignment for sequence " << i << "... ";
+                //output << "Annotating alignment for sequence " << i << "... ";
                 annotateBreakpoints(sequence[i], alignment[i], output.str());
-                cout << "done (" << Util::stopChronoStr() << ")" << endl;
+                //cout << "done (" << Util::stopChronoStr() << ")" << endl;
+
+                if (alignment[i].size() == 1)      // FIXME: delete
+                        continue;
+                output << "Non-contiguous alignment for sequence " << i << endl;
                 printSegments(sequence[i], alignment[i]);
         }
 }
@@ -255,8 +257,8 @@ void RefComp::alignSequences()
 void RefComp::printSegments(const string& seq,
                             const std::vector<AlnSegment>& alignment) const
 {
-        // for (const AlnSegment& refSeg : alignment)
-        //        cout << refSeg << endl;
+        for (const AlnSegment& refSeg : alignment)
+                cout << refSeg << endl;
 
         size_t numContigs = 0, numParallel = 0, numInserts = 0, numDeletions = 0, numBreaks = 0;
         size_t lenContigs = 0, lenParallel = 0, lenInserts = 0, lenDeletions = 0, lenBreaks = 0;
@@ -299,10 +301,33 @@ void RefComp::printSegments(const string& seq,
              << " (" << Util::toPercentage(lenBreaks, margLen) << "%)" << endl;
 }
 
+void RefComp::writeAlignedSeqs(const std::string& filename)
+{
+        // align sequences to the de Bruijn graph
+        vector<vector<AlnSegment> > aln;
+        alignSequences(aln);
+
+        // write aligned contigs to disk
+        ofstream ofs(filename.c_str());
+        size_t contigID = 0;
+        for (size_t i = 0; i < sequence.size(); i++) {
+                for (const AlnSegment& refSeg : aln[i]) {
+                        if (refSeg.type != AlnSegmentType::CONTIG)
+                                continue;
+                        ofs << ">contig_" << contigID++ << "\n";
+                        size_t b = refSeg.seqBegin;
+                        size_t e = refSeg.seqEnd;
+
+                        Util::writeSeqWrap(ofs, sequence[i].substr(b, e-b), 60);
+                }
+        }
+}
+
+
 void RefComp::getTrueNodeChain(vector<NodeChain>& nodeChain)
 {
-        // align the reference sequences to the DBG to figure out true node chains
-        /*for (const string& seq : sequence) {
+        // align the reference sequences to the DBG to obtain true node chains
+        for (const string& seq : sequence) {
                 // handle the other kmers
                 NodePosPair prev;
                 for (KmerIt it(seq); it.isValid(); it++) {
@@ -325,17 +350,27 @@ void RefComp::getTrueNodeChain(vector<NodeChain>& nodeChain)
 
                         prev = curr;
                 }
-        }*/
+        }
 }
 
-void RefComp::getTrueMultiplicity(const KmerNPPTable& table,
-                                  vector<int>& nodeMult,
-                                  vector<int>& edgeMult)
+void RefComp::getTrueMultiplicity(NodeMap<int>& nodeMult,
+                                  EdgeMap<int>& edgeMult)
 {
-        nodeMult.clear();
-        nodeMult.resize(dBG.getNumNodes()+1, 0);
-        edgeMult.clear();
-        edgeMult.resize(dBG.getNumArcs()+1, 0);
+        // create an empty node and edge map
+        nodeMult = NodeMap<int>(dBG.getNumValidNodes());
+        edgeMult = EdgeMap<int>(dBG.getNumValidArcs() / 2);
+
+        for (size_t id = 1; id <= dBG.getNumNodes(); id++) {
+                SSNode n = dBG.getSSNode(id);
+                if (!n.isValid())
+                        continue;
+                nodeMult[id] = 0;
+
+                for (ArcIt it = n.leftBegin(); it != n.leftEnd(); it++)
+                        edgeMult[EdgeRep(it->getNodeID(), id)] = 0;
+                for (ArcIt it = n.rightBegin(); it != n.rightEnd(); it++)
+                        edgeMult[EdgeRep(id, it->getNodeID())] = 0;
+        }
 
         // count the number of true kmers in each node
         for (const string& seq : sequence) {
@@ -343,7 +378,7 @@ void RefComp::getTrueMultiplicity(const KmerNPPTable& table,
                 KmerIt it(seq);
                 NodePosPair prev = table.find(it.getKmer());
                 if (prev.isValid())
-                        nodeMult[abs(prev.getNodeID())]++;
+                        nodeMult[prev.getNodeID()]++;
 
                 // for all kmers in the reference sequence
                 for (it++; it.isValid(); it++) {
@@ -352,21 +387,13 @@ void RefComp::getTrueMultiplicity(const KmerNPPTable& table,
 
                         // update kmer counters
                         if (curr.isValid())
-                                nodeMult[abs(curr.getNodeID())]++;
+                                nodeMult[curr.getNodeID()]++;
 
                         // get the arc multiplicity
                         if (dBG.crossesArc(prev, curr)) {
                                 // arc from prev to curr
-                                SSNode left = dBG.getSSNode(prev.getNodeID());
-                                Arc* arc = left.rightArc(curr.getNodeID());
-                                edgeMult[dBG.getArcID(arc)]++;
-
-                                // arc from curr to prev (don't count palindromic arcs twice!)
-                                if (prev.getNodeID() != -curr.getNodeID()) {
-                                        SSNode right = dBG.getSSNode(curr.getNodeID());
-                                        arc = right.leftArc(prev.getNodeID());
-                                        edgeMult[dBG.getArcID(arc)]++;
-                                }
+                                EdgeRep er(prev.getNodeID(), curr.getNodeID());
+                                edgeMult[er]++;
                         }
 
                         prev = curr;
@@ -375,45 +402,42 @@ void RefComp::getTrueMultiplicity(const KmerNPPTable& table,
 
         size_t numTrueNodes = 0, numErrNodes = 0;
 
-        // compute the multiplicity for each node
-        for (size_t i = 1; i <= dBG.getNumNodes(); i++) {
-                SSNode node = dBG.getSSNode(i);
+        // compute the multiplicity for each node and node statistics
+        for (auto& it : nodeMult) {
+                SSNode node = dBG.getSSNode(it.first);
                 if (!node.isValid())
                         continue;
 
                 double ML = node.getMarginalLength();
-                nodeMult[i] = round((double)nodeMult[i]/ML);
-                if (nodeMult[i] > 0)
+                it.second = round((double)it.second/ML);
+                if (it.second > 0)
                         numTrueNodes++;
                 else
                         numErrNodes++;
         }
 
-        double perc = Util::toPercentage(numTrueNodes, dBG.getNumValidNodes());
-        cout << "Number of true nodes: " << numTrueNodes << "/"
-             << dBG.getNumValidNodes() << " (" << perc << "%)" << endl;
-        perc = Util::toPercentage(numErrNodes, dBG.getNumValidNodes());
-        cout << "Number of false nodes: " << numErrNodes << "/"
-             << dBG.getNumValidNodes() << " (" << perc << "%)" << endl;
+        cout.precision(2);
+        double perc = Util::toPercentage(numTrueNodes, nodeMult.size());
+        cout << fixed << "Number of true nodes: " << numTrueNodes << "/"
+             << nodeMult.size() << " (" << perc << "%)" << endl;
+        perc = Util::toPercentage(numErrNodes, nodeMult.size());
+        cout << fixed << "Number of false nodes: " << numErrNodes << "/"
+             << nodeMult.size() << " (" << perc << "%)" << endl;
 
+        // compute the edge statistics
         size_t numTrueArcs = 0, numErrArcs = 0;
 
-        // compute the multiplicity for each node
-        for (size_t i = 1; i <= dBG.getNumArcs(); i++) {
-                Arc& arc = dBG.getArc(i);
-                if (!arc.isValid())
-                        continue;
-
-                if (edgeMult[i] > 0)
+        for (auto& it : edgeMult) {
+                if (it.second > 0)
                         numTrueArcs++;
                 else
                         numErrArcs++;
         }
 
-        perc = Util::toPercentage(numTrueArcs, dBG.getNumValidArcs());
-        cout << "Number of true arcs: " << numTrueArcs << "/"
-             << dBG.getNumValidArcs() << " (" << perc << "%)" << endl;
-        perc = Util::toPercentage(numErrArcs, dBG.getNumValidArcs());
-        cout << "Number of false arcs: " << numErrArcs << "/"
-             << dBG.getNumValidArcs() << " (" << perc << "%)" << endl;
+        perc = Util::toPercentage(numTrueArcs, edgeMult.size());
+        cout << fixed << "Number of true arcs: " << numTrueArcs << "/"
+             << edgeMult.size() << " (" << perc << "%)" << endl;
+        perc = Util::toPercentage(numErrArcs, edgeMult.size());
+        cout << fixed << "Number of false arcs: " << numErrArcs << "/"
+             << edgeMult.size() << " (" << perc << "%)" << endl;
 }

@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -27,6 +27,7 @@
 #include <map>
 #include <cmath>
 #include <mutex>
+#include <cassert>
 
 // ============================================================================
 // DEFINITIONS
@@ -233,7 +234,8 @@ public:
          * @param mu Average
          * @return The probability p(k)
          */
-        static double logPoissonPDF(unsigned int k, double mu);
+       	static double logPoissonPDF(unsigned int k, double mu);
+        static double logPoissonPDF(double k, double mu);
 
         /**
          * Compute the probability ratio p(k, mu1) / p(k, mu2)
@@ -357,6 +359,12 @@ public:
                 phredConv.enablePhred(base);
         }
 
+        static void writeSeqWrap(std::ostream& ofs, const std::string& s,
+                                 size_t wrap) {
+                for (size_t c = 0; c < s.size(); c += wrap)
+                        ofs << s.substr(c, wrap) << "\n";
+        }
+
         /**
          * Compute P that sequence is correct given ASCII phred scores
          * @param phred Phred scores encoded as ASCII string
@@ -365,6 +373,34 @@ public:
          * @return P([b, e[ is correct) = product of individual probabilities
          */
         static double phred2prob(const std::string& phred, size_t b, size_t e);
+
+        /**
+         * Compute the factorial of a number
+         * @param n Number (>= 0)
+         * @return The factorial product
+         */
+        static size_t factorial(int n) {
+                assert(n >= 0);
+                size_t res = 1;
+                for (int i = 2; i <= n; i++)
+                        res *= i;
+                return res;
+        }
+
+        /**
+         * Compute the ratio a! / b!
+         * @param a Number a (>= 0)
+         * @param b Number b (>= 0) AND (a >= b OR a = 0; b = 1)
+         * @return The ratio a! / b!
+         */
+        static size_t factRatio(int a, int b) {
+                assert((a >= 0) && (b >= 0));
+                assert((a == 0 && b == 1) || (a >= b));
+                size_t res = 1;
+                for (int i = b+1; i <= a; i++)
+                        res *= i;
+                return res;
+        }
 };
 
 #endif

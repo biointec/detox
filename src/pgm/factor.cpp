@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2018 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2018 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -21,6 +21,7 @@
 #include <numeric>
 #include <iostream>
 #include <cmath>
+#include <fstream>
 
 #include "factor.h"
 
@@ -333,4 +334,19 @@ ostream& operator<<(ostream& os, const Factor& F) {
         }
 
         return os;
+}
+
+void Factor::writeLibDAIFactorBlock(std::ofstream& file) const{
+        if( ! file.is_open())
+                return;
+        
+        file << "\n" << getNumVar() << "\n";
+        for (size_t i = 0; i < var.size(); i++)
+                file << var[i] << " ";
+        file << "\n";
+        for (size_t i = 0; i < card.size(); i++)
+                file << card[i] << " ";
+        file << "\n" << val.size() << "\n";
+        for (size_t i = 0; i < val.size(); i++) 
+            file << i << " " << exp(val[i]) << "\n";
 }

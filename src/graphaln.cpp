@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -37,24 +37,24 @@ std::ostream &operator<<(std::ostream &out, const GraphAlignment& ga)
         return out;
 }
 
-std::string GraphAlignment::getSequence(const DBGraph& dbg) const
+std::string GraphAlignment::getSequence(const DBGraph& dBG) const
 {
         string result;
 
         for (const auto& it : path) {
-                string nodeSeq = dbg.getSSNode(it.nodeID).getSequence();
+                string nodeSeq = dBG.getSSNode(it.nodeID).getSequence();
                 result.append(nodeSeq.substr(it.nodeBegin, it.nodeEnd-it.nodeBegin));
         }
 
         return result;
 }
 
-double GraphAlignment::getAvgKmerCov(const DBGraph& dbg) const
+double GraphAlignment::getAvgKmerCov(const DBGraph& dBG) const
 {
         double totKmer = 0, totLen = 0;
         for (auto it : path) {
                 double len = it.nodeEnd - it.nodeBegin;
-                totKmer += dbg.getSSNode(it.nodeID).getAvgCov() * len;
+                totKmer += dBG.getSSNode(it.nodeID).getAvgCov() * len;
                 totLen += len;
         }
 
@@ -91,7 +91,7 @@ void GraphAlignment::getKmerNPP(vector<NodePosPair>& kmerNPP) const
 void GraphAligner::visualizeNodeAln(const NodeAlignment& nodeAln,
                                     const GraphAlignment& ga, const string& P) const
 {
-        SSNode node = dbg.getSSNode(nodeAln.nodeID);
+        SSNode node = dBG.getSSNode(nodeAln.nodeID);
 
         /*for (int i = 0; i < nodeAln.pattBegin; i++)
                 cout << " ";*/
@@ -137,7 +137,7 @@ NodeAlignment GraphAligner::alnToNodeOpenEnd(const string& patt,
                                             size_t pattBegin,
                                             const NodePosPair& nodeBegin)
 {
-        SSNode node = dbg.getSSNode(nodeBegin.getNodeID());
+        SSNode node = dBG.getSSNode(nodeBegin.getNodeID());
 
         size_t nodeLen = node.length() - nodeBegin.getPosition();
         size_t pattLen = patt.length() - pattBegin;
@@ -178,7 +178,7 @@ NodeAlignment GraphAligner::nodeAlnTo(const string& patt, size_t pattBegin,
         assert(nodeBegin.getNodeID() == nodeEnd.getNodeID());
         assert(nodeEnd.getPosition() >= nodeBegin.getPosition());
 
-        SSNode node = dbg.getSSNode(nodeBegin.getNodeID());
+        SSNode node = dBG.getSSNode(nodeBegin.getNodeID());
 
         size_t pattLen = patt.length() - pattBegin;
 
@@ -225,7 +225,7 @@ NodeAlignment GraphAligner::nodeAln(const string& patt,
         assert(pattEnd >= pattBegin);
         assert(nodeEnd.getPosition() >= nodeBegin.getPosition());
 
-        SSNode node = dbg.getSSNode(nodeBegin.getNodeID());
+        SSNode node = dBG.getSSNode(nodeBegin.getNodeID());
 
         // alignment lengths are fixed
         size_t nodeAlLen = nodeEnd.getPosition() - nodeBegin.getPosition();
@@ -270,7 +270,7 @@ SearchRes GraphAligner::DFSAln(const string& P, const NodePosPair& srcNPP,
 
                 // explore all right neighbors of the current node
                 vector<NodeAlignment> v;
-                SSNode node = dbg.getSSNode(currNA.nodeID);
+                SSNode node = dBG.getSSNode(currNA.nodeID);
                 for (ArcIt it = node.rightBegin(); it != node.rightEnd(); it++) {
                         // explore this path only if it has potential to improve bestGA
                         if (getMaxAttainableScore(P, currGA) <= bestGA.getScore())
@@ -324,7 +324,7 @@ SearchRes GraphAligner::DFSAlnTo(const string& P,
 
                 // explore all right neighbors of the current node
                 vector<NodeAlignment> v;
-                SSNode node = dbg.getSSNode(currNA.nodeID);
+                SSNode node = dBG.getSSNode(currNA.nodeID);
                 for (ArcIt it = node.rightBegin(); it != node.rightEnd(); it++) {
                         NodeID nextID = it->getNodeID();
 
@@ -381,9 +381,9 @@ void GraphAligner::findShortestPathToNPP(const NodePosPair& dstEnd,
                         continue;
 
                 // add the left neighbors of the current node to the PQ
-                SSNode curr = dbg.getSSNode(currID);
+                SSNode curr = dBG.getSSNode(currID);
                 for (ArcIt it = curr.leftBegin(); it != curr.leftEnd(); it++) {
-                        SSNode left = dbg.getSSNode(it->getNodeID());
+                        SSNode left = dBG.getSSNode(it->getNodeID());
                         size_t leftLength = currTop.depth + left.getMarginalLength();
 
                         // if left was not visited before
@@ -394,7 +394,7 @@ void GraphAligner::findShortestPathToNPP(const NodePosPair& dstEnd,
 
         // shortest path from the dst node to dstNPP is the loop that first
         // contains the entire dst node (by definition)
-        SSNode dst = dbg.getSSNode(dstEnd.getNodeID());
+        SSNode dst = dBG.getSSNode(dstEnd.getNodeID());
         size_t dstLen = numeric_limits<size_t>::max();
         for (ArcIt it = dst.rightBegin(); it != dst.rightEnd(); it++)
                 dstLen = min(lenToDst[it->getNodeID()], dstLen);
@@ -408,14 +408,14 @@ void GraphAligner::findParallelPath(NodeID nodeID, GraphAlignment& bestGraphAln)
         bestGraphAln.clear();
         GraphAlignment currGraphAln;
 
-        SSNode node = dbg.getSSNode(nodeID);
+        SSNode node = dBG.getSSNode(nodeID);
         assert(node.isValid());
 
         string str = node.getSequence();
 
         // consider all left neighbors ...
         for (ArcIt lIt = node.leftBegin(); lIt != node.leftEnd(); lIt++) {
-                SSNode left = dbg.getSSNode(lIt->getNodeID());
+                SSNode left = dBG.getSSNode(lIt->getNodeID());
 
                 // ... and their right neigbors as starting points
                 for (ArcIt rIt = left.rightBegin(); rIt != left.rightEnd(); rIt++) {
@@ -439,7 +439,7 @@ string GraphAligner::getInternalSeq(const vector<NodeID>& path) const
 
         string retVal;
         for (size_t i = 1; i+1 < path.size(); i++)
-                retVal.append(dbg.getSSNode(path[i]).getSequence().substr(Kmer::getK()-1));
+                retVal.append(dBG.getSSNode(path[i]).getSequence().substr(Kmer::getK()-1));
 
         return retVal;
 }
@@ -500,6 +500,6 @@ SearchRes GraphAligner::findPath(const std::string& sequence,
         return retVal;
 }
 
-GraphAligner::GraphAligner(const DBGraph& dbg): dbg(dbg), maxVisits(1000),
-        aligner(2, 1, -1, -2), lenToDst(dbg.getNumNodes(), numeric_limits<size_t>::max())
+GraphAligner::GraphAligner(const DBGraph& dBG): dBG(dBG), maxVisits(1000),
+        aligner(2, 1, -1, -2), lenToDst(dBG.getNumNodes(), numeric_limits<size_t>::max())
 {}

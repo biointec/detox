@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2018 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2018 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -274,6 +274,13 @@ public:
          * @return Output stream with F appended to it
          */
         friend std::ostream& operator<<(std::ostream& os, const Factor& F);
+        
+         /**
+         * Write out a factor block to a given file stream, according to the libDAI Factor graph format convention
+         * Right now this function assumes there are no zero entries in the factor
+         * @param file a .fg file to write to (has to be open)
+         */
+        void writeLibDAIFactorBlock(std::ofstream& file) const;
 };
 
 #endif

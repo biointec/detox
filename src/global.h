@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -21,7 +21,7 @@
 
 #include <cstdlib>
 #include <cstdint>
-
+#include <utility>
 
 #define FLOAT_SMALL 1E-6
 #define DOUBLE_SMALL 1E-15
@@ -47,6 +47,6 @@ class TKmer;
 template<size_t numBytes>
 struct TKmerHash;
 
-
+typedef std::pair<NodeID, NodeID> NodePair;
 
 #endif

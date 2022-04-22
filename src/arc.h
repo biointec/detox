@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -24,6 +24,14 @@
 #include <atomic>
 #include <fstream>
 #include <cassert>
+#include <vector>
+#include <google/sparse_hash_map>
+
+// ============================================================================
+// EDGE
+// ============================================================================
+
+typedef std::pair<NodeID, NodeID> EdgeID;
 
 // ============================================================================
 // EDGE REPRESENTATIVE CLASS
@@ -101,7 +109,59 @@ public:
                         return srcID < rhs.srcID;
                 return dstID < rhs.dstID;
         }
+        
+        operator std::pair<NodeID, NodeID>() const {
+                return std::pair<NodeID, NodeID>(srcID, dstID);
+        }
+
+        /**
+         * Compute a hash function
+         * @return Hash value
+         */
+        size_t getHash() const {
+
+                size_t w = (size_t(srcID) << 32) + size_t(dstID);
+                size_t hash = 0;
+                w = ~w + (w << 21);             // key = (key << 21) - key - 1;
+                w = w ^ (w >> 24);
+                w = (w + (w << 3)) + (w << 8);  // key * 265
+                w = w ^ (w >> 14);
+                w = (w + (w << 2)) + (w << 4);  // key * 21
+                w = w ^ (w >> 28);
+                w = w + (w << 31);
+                hash = hash ^ size_t(w);
+
+                return hash;
+        }
+
+        /**
+         * Operator << overloading
+         * @param out Output stream to add edge representative to
+         * @param er Edge representative
+         * @return Output stream with the edge representative added to it
+         */
+        friend std::ostream& operator<<(std::ostream &out, const EdgeRep& er) {
+                out << "(" << er.srcID << " -> " << er.dstID << ")";
+                return out;
+        }
 };
+
+// ============================================================================
+// HASH FUNCTION
+// ============================================================================
+
+struct EdgeHash {
+        size_t operator()(const EdgeRep &er) const {
+                return er.getHash();
+        }
+};
+
+// ============================================================================
+// EDGE MAP
+// ============================================================================
+
+template<class T>
+using EdgeMap = google::sparse_hash_map<EdgeRep, T, EdgeHash>;
 
 // ============================================================================
 // ARC CLASS

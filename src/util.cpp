@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -180,6 +180,11 @@ double Util::logPoissonPDF(unsigned int k, double mu)
         return k*log(mu)-mu-lgamma(k+1);
 }
 
+double Util::logPoissonPDF(double k, double mu)
+{
+        return k*log(mu)-mu-lgamma(k+1);
+}
+
 double Util::poissonPDFratio(unsigned int k, double mu1, double mu2)
 {
         return exp(k*log(mu1) - mu1 - k*log(mu2) + mu2);
@@ -189,7 +194,7 @@ double Util::negbinomialPDF(unsigned int k, double mu, double sigma2)
 {
         // make sure that sigma2 is bigger than mu
         if ((sigma2 - mu) < 1e-3)
-                sigma2 = mu + 1e-3;
+                return poissonPDF(k,mu);
 
         double p = (sigma2 - mu)/sigma2;
         double r = mu*mu/(sigma2 - mu);
@@ -200,7 +205,7 @@ double Util::logNegbinomialPDF(unsigned int k, double mu, double sigma2)
 {
         // make sure that sigma2 is bigger than mu
         if ((sigma2 - mu) < 1e-3)
-                sigma2 = mu + 1e-3;
+                return logPoissonPDF(k,mu);
 
         double p = (sigma2 - mu)/sigma2;
         double r = mu*mu/(sigma2 - mu);
@@ -211,7 +216,7 @@ double Util::logNegbinomialPDF(double k, double mu, double sigma2)
 {
         // make sure that sigma2 is bigger than mu
         if ((sigma2 - mu) < 1e-3)
-                sigma2 = mu + 1e-3;
+                return logPoissonPDF(k,mu);
 
         double p = (sigma2 - mu)/sigma2;
         double r = mu*mu/(sigma2 - mu);
@@ -255,8 +260,11 @@ int Util::fitTruncNegBinomEM(map<unsigned int, double>& data,
                              double& mu, double& ODF, double& w,
                              double epsilon, int maxIter)
 {
-        if (data.empty())
-                return maxIter + 1;
+        // this can happen if all errors have already been removed
+        if (data.empty()) {
+                w = 0.0;
+                return 0;
+        }
 
         // we assume all count data [0, 1,...T[ is missing
         unsigned int T = data.begin()->first;
@@ -281,7 +289,6 @@ int Util::fitTruncNegBinomEM(map<unsigned int, double>& data,
                 }
 
                 mu = max(DOUBLE_SMALL, mu / w); // handle mu = 0.0
-
 
                 // compute variance
                 double sum = 0.0;

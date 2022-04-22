@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -18,7 +18,6 @@
 
 #include "dbgraph.h"
 #include "kmernpp.h"
-#include "library.h"
 #include "settings.h"
 #include "coverage.h"
 
@@ -67,9 +66,9 @@ double Multiplicity::getExpMultLogOR() const
 
 double Multiplicity::getExpMultLProb() const
 {
-        // if we only have one option, the odds ratio is infinite
+        // if we only have one option, the log of the probability is zero
         if (P.size() <= 1)
-                return 1.0;
+                return 0.0;
 
         // get the most likely option
         int expMult = getExpMult();
@@ -113,16 +112,16 @@ std::ostream &operator<<(std::ostream &out, const Multiplicity &m)
 // COVERAGE MODEL
 // ============================================================================
 
-CovModel::CovModel(double errorLambda, double errorODF,
-                   double lambda, double ODF,
-                   const std::vector<double>& w) :
+CovModel::CovModel(double errorLambda, double errorODF, double lambda,
+                   double ODF, const std::vector<double>& w) :
         errorLambda(errorLambda), errorODF(errorODF), lambda(lambda), ODF(ODF)
 {
         assert(w.size() > 2); // we want at least a weight for errors, mult 1 and mult > 1
         // store the logarithm of the weights
         logw.resize(w.size());
+        const double pseudoCount = 1.0;
         for (size_t i = 0; i < logw.size(); i++)
-                logw[i] = log(w[i] + 1.0);
+                logw[i] = log(max<double>(w[i], pseudoCount));
 }
 
 CovModel::CovModel(const std::string& filename)
@@ -170,6 +169,7 @@ double CovModel::getLogProb(double obsCov, int mult) const
         double myODF = (mult == 0) ? errorODF : ODF;
         double w = (mult < (int)logw.size()) ? logw[mult] : logw.back();
         return w + Util::logNegbinomialPDF(obsCov, myLambda, myODF * myLambda);
+        //return log(exp(w + Util::logNegbinomialPDF(obsCov, myLambda, myODF * myLambda)) + 1e-3);
 }
 
 void CovModel::write(const std::string& covFilename) const
@@ -286,10 +286,10 @@ double DBGraph::getInitialKmerCovEstimate(double errLambda, double p) const
                 return 2.0 * errLambda;      // pathological case
 }
 
-void DBGraph::covCount(const ReadRecord& rr, const KmerNPPTable& table)
+void DBGraph::covCount(const FastQRecord& rr, const KmerNPPTable& table)
 {
         const string& read = rr.getRead();
-        const string& qual = rr.getQStr();
+        const string& qual = rr.getQual();
 
         NodePosPair prevNpp; NodePosition prevOff = 0;
         for (KmerIt it(read); it.isValid(); it++) {
@@ -319,14 +319,14 @@ void DBGraph::covCount(const ReadRecord& rr, const KmerNPPTable& table)
         }
 }
 
-void DBGraph::covCountThread(LibraryContainer& inputs,
+void DBGraph::covCountThread(FastQReader& inputs,
                              const KmerNPPTable& table)
 {
         // local storage of reads
-        vector<ReadRecord> readBuf;
+        vector<FastQRecord> readBuf;
 
-        size_t blockID, recordOffset;
-        while (inputs.getRecordChunk(readBuf, blockID, recordOffset))
+        size_t chunkID;
+        while (inputs.getNextChunk(readBuf, chunkID))
                 for (const auto& readRecord : readBuf)
                         covCount(readRecord, table);
 }
@@ -353,17 +353,24 @@ void DBGraph::getCovFromReads(LibraryContainer &inputs, const KmerNPPTable& tabl
         cout << "Number of threads: " << numThreads << endl;
 
         const size_t ws = settings.getThreadIOWorkSize();
-        inputs.startIOThreads(ws, ws * settings.getNumThreads());
+        for (size_t i = 0; i < inputs.size(); i++) {
+                string fn1, fn2;
+                tie(fn1, fn2) = inputs.getFilename(i);
 
-        // start worker threads
-        vector<thread> workerThreads(numThreads);
-        for (size_t i = 0; i < workerThreads.size(); i++)
-                workerThreads[i] = thread(&DBGraph::covCountThread,
-                                          this, ref(inputs), cref(table));
+                FastQReader myReader(fn1, fn2);
+                myReader.startReaderThread(ws, ws * settings.getNumThreads());
 
-        // wait for worker threads to finish
-        for_each(workerThreads.begin(), workerThreads.end(), mem_fn(&thread::join));
-        inputs.joinIOThreads();
+                // start worker threads
+                vector<thread> workerThreads(numThreads);
+                for (size_t i = 0; i < workerThreads.size(); i++)
+                        workerThreads[i] = thread(&DBGraph::covCountThread,
+                                                  this, ref(myReader), cref(table));
+
+                // wait for worker threads to finish
+                for_each(workerThreads.begin(), workerThreads.end(), mem_fn(&thread::join));
+
+                myReader.joinReaderThread();
+        }
 
         size_t numZero = 0;
         for (ArcID id = 1; id <= numArcs; id++)

@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -21,6 +21,7 @@
 
 #include "global.h"
 #include "kmernpp.h"
+#include "ssnode.h"
 
 #include <string>
 #include <vector>
@@ -34,111 +35,7 @@ class DBGraph;
 class Settings;
 class WorkLoadBalancer;
 class GraphAligner;
-
-// ============================================================================
-// NODE CHAIN CLASS
-// ============================================================================
-
-class NodeChain : public std::vector<NodeID>
-{
-private:
-        size_t count;   // number of times the nodechain was observed
-
-public:
-        /**
-         * Default constructor
-         */
-        NodeChain() : count(0) {}
-
-        /**
-         * Constructor from an input vector
-         * @param input Input vector
-         */
-        NodeChain(const std::vector<NodeID>& input) : count(1) {
-                for (const auto& it : input)
-                        push_back(it);
-        }
-
-        /**
-         * Increment the count by one
-         */
-        void incrCount() {
-                count++;
-        }
-
-        /**
-         * Get the count
-         * @return count
-         */
-        size_t getCount() const {
-                return count;
-        }
-
-        /**
-         * Set the count
-         * @param target Target count
-         */
-        void setCount(size_t target) {
-                count = target;
-        }
-
-        /**
-         * Operator < overloading
-         * @param rhs Right hand side
-         */
-        bool operator<(const NodeChain& rhs) const {
-                if (size() != rhs.size())
-                        return size() < rhs.size();
-                for (size_t i = 0; i < size(); i++)
-                        if ((*this)[i] != rhs[i])
-                                return (*this)[i] < rhs[i];
-                return false;
-        }
-
-        /**
-         * Operator < overloading
-         * @param rhs Right hand side
-         */
-        bool operator==(const NodeChain& rhs) const {
-                if (size() != rhs.size())
-                        return false;
-                for (size_t i = 0; i < size(); i++)
-                        if ((*this)[i] != rhs[i])
-                                return false;
-                return true;
-        }
-
-        /**
-         * Get the reverse complement of the node chain
-         * @return The reverse complementary chain
-         */
-        NodeChain getReverseComplement() const {
-                NodeChain copy = *this;
-
-                std::reverse(copy.begin(), copy.end());
-                for (size_t i = 0; i < copy.size(); i++)
-                        copy[i] = -copy[i];
-
-                return copy;
-        }
-
-        /**
-         * Get the representative node chain
-         * @return The representative node chain
-         */
-        NodeChain getRepresentative() const {
-                NodeChain RC = getReverseComplement();
-                return (RC < *this) ? RC : *this;
-        }
-
-        /**
-         * Operator<< overloading
-         * @param out Output file stream (input)
-         * @param ncc NodeChainContainer to display
-         * @return Output file stream
-         */
-        friend std::ostream &operator<<(std::ostream &out, const NodeChain& nc);
-};
+class NodeChain;
 
 // ============================================================================
 // ALIGNED SEGMENT CLASS
@@ -244,6 +141,7 @@ class RefComp {
 private:
         const DBGraph& dBG;                     // const-reference to dBG
         const Settings& settings;               // const-reference to settings
+        const KmerNPPTable& table;              // <kmer, NodePosPair> table
         std::vector<std::string> sequence;      // reference sequences
 
         /**
@@ -304,7 +202,7 @@ private:
          * @param kmer k-mer respresented as a string (can contain non-ACTG)
          * @return < NodeID, NodePosition > pair
          */
-        /*NodePosPair findNPP(const std::string& kmer) const {
+        NodePosPair findNPP(const std::string& kmer) const {
                 assert(kmer.size() == Kmer::getK());
 
                 // if one of the characters is non-ACTG return "not found"
@@ -313,23 +211,34 @@ private:
                                 return NodePosPair(0, 0);
 
                 return table.find(Kmer(kmer));
-        }*/
+        }
 
 public:
         /**
          * Constructor
          * @param dBG Const-ref to de Bruijn graph
+         * @param settings Const-ref to settings object
+         * @param table Pre-constructed <kmer, NodePosPair> table
          */
-        RefComp(const DBGraph& dBG, const Settings& settings, const std::string& fastaFilename) :
-                dBG(dBG), settings(settings)
+        RefComp(const DBGraph& dBG, const Settings& settings,
+                const KmerNPPTable& table, const std::string& fastaFilename) :
+                dBG(dBG), settings(settings), table(table)
         {
                 readFastaFile(fastaFilename);
         }
 
         /**
          * Align reference sequences to a de Bruijn graph
+         * @param aln Aligned sequences (output)
          */
-        void alignSequences();
+        void alignSequences(std::vector<std::vector<AlnSegment> >& aln);
+
+        /**
+         * Write the aligned sequences as a FASTA file
+         * @param filename Output filename
+         */
+        void writeAlignedSeqs(const std::string& filename);
+
 
         /**
          * Get the true node chains from the reference sequence
@@ -339,13 +248,11 @@ public:
 
         /**
          * Calculate the true node multiplicity
-         * @param table Populated <kmer, NodePosPair> table
          * @param nodeMult Node multiplicity vector (output)
          * @param edgeMult Edge multiplicity vector (output)
          */
-        void getTrueMultiplicity(const KmerNPPTable& table,
-                                 std::vector<int>& nodeMult,
-                                 std::vector<int>& edgeMult);
+        void getTrueMultiplicity(NodeMap<int>& nodeMult,
+                                 EdgeMap<int>& edgeMult);
 };
 
 #endif

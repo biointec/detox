@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -16,11 +16,14 @@
  *   along with this program; if not, see <https://www.gnu.org/licenses/>.    *
  ******************************************************************************/
 
+#include <sstream>
 #include "dbgraph.h"
+#include "crfmult.h"
+#include "alignment.h"
 
 using namespace std;
 
-void DBGraph::removeNode(NodeID nodeID)
+void DBGraph::removeNode(NodeID nodeID, NodeID newID)
 {
         SSNode node = getSSNode(nodeID);
         if (!node.isValid())            // node already removed
@@ -49,6 +52,24 @@ void DBGraph::removeNode(NodeID nodeID)
 
         numValidNodes--;
         node.invalidate();
+
+        // The node has been flagged as deleted and has no longer any arcs.
+        // We abuse the vacant 'firstLeftArcID' to point to the new node
+        // in which the original's node's contents are now found.
+        node.setFirstRightArcID(newID);
+        node.setFirstLeftArcID(-newID);
+}
+
+NodeID DBGraph::getPresentNodeID(NodeID nodeID)
+{
+        while (true) {
+                if (nodeID == 0)
+                        return nodeID;
+                SSNode n = getSSNode(nodeID);
+                if (n.isValid())
+                        return nodeID;
+                nodeID = n.getFirstRightArcID();
+        }
 }
 
 void DBGraph::removeArc(NodeID leftID, NodeID rightID)
@@ -58,6 +79,30 @@ void DBGraph::removeArc(NodeID leftID, NodeID rightID)
 
         if (getSSNode(rightID).deleteLeftArc(leftID))
                 numValidArcs--;
+}
+
+void DBGraph::removeRightArcs(NodeID nodeID)
+{
+        SSNode n = getSSNode(nodeID);
+
+        vector<NodeID> rNeighbors;
+        for (ArcIt it = n.rightBegin(); it != n.rightEnd(); it++)
+                rNeighbors.push_back(it->getNodeID());
+
+        for (NodeID rID : rNeighbors)
+                removeArc(nodeID, rID);
+}
+
+void DBGraph::removeLeftArcs(NodeID nodeID)
+{
+        SSNode n = getSSNode(nodeID);
+
+        vector<NodeID> lNeighbors;
+        for (ArcIt it = n.leftBegin(); it != n.leftEnd(); it++)
+                lNeighbors.push_back(it->getNodeID());
+
+        for (NodeID lID : lNeighbors)
+                removeArc(lID, nodeID);
 }
 
 void DBGraph::removeCoverage(double covCutoff, size_t maxMargLength)
@@ -139,7 +184,7 @@ void DBGraph::removeCoverageNodes(double covCutoff, size_t maxMargLength)
 }
 
 void DBGraph::convertNodesToString(const vector<NodeID> &nodeSeq,
-                                   string &output)
+                                   string &output) const
 {
         output.clear();
 
@@ -226,17 +271,18 @@ void DBGraph::concatenateAroundNode(NodeID seedID, vector<NodeID>& nodeListv)
         Coverage newCov = front.getCov();
         for (size_t i = 1; i < nodeListq.size(); i++) {
                 SSNode n = getSSNode(nodeListq[i]);
-
                 newCov += n.getCov();
-                n.deleteAllLeftArcs();
-                n.deleteAllRightArcs();
-                n.invalidate();
+
+                // indicate that the removed node is now part of frontID
+                removeNode(nodeListq[i], frontID);
         }
 
         front.setCov(newCov);
         front.setSequence(str);
-        numValidNodes -= nodeListq.size() - 1;
-        numValidArcs -= 2*(nodeListq.size() - 1);
+
+        // it is important to flag the nodes that now also contain
+        // also nodes. The rountine updateNodeChain() depends on it.
+        front.setFlag2(true);
 }
 
 bool DBGraph::concatenateNodes()
@@ -271,4 +317,76 @@ void DBGraph::removeEdges(const std::vector<EdgeRep>& edges)
 {
         for (const auto& el : edges)
                 removeArc(el.getSrcID(), el.getDstID());
+}
+
+
+
+void DBGraph::getSubgraph(NodeID srcID, int maxLen, int maxNodes,
+                          map<NodeID, int>& nodeDist)
+{
+        nodeDist.clear();
+
+        priority_queue<NodeDFS, vector<NodeDFS>, NodeDFSComp> pq;
+        pq.push(NodeDFS(srcID, 0));
+
+        while (!pq.empty()) {
+                // get and erase the current node
+                NodeDFS currTop = pq.top();
+                pq.pop();
+                NodeID thisID = currTop.nodeID;
+                int thisDist = currTop.depth;
+
+                // if the node was visited before, get out
+                // (the shortest distance is already stored in nodeDist)
+                if (nodeDist.find(thisID) != nodeDist.end())
+                        continue;
+
+                // store the shortest distance to the current node
+                nodeDist[thisID] = thisDist;
+
+                // number of nodes exceeded
+                if (nodeDist.size() > maxNodes)
+                        return;
+
+                SSNode n = getSSNode(thisID);
+
+                // don't go any further if we have reached the maximum length
+                int deltaDist = (thisID == srcID) ? 0 : n.getMarginalLength();
+                if (thisDist + deltaDist > maxLen)
+                        continue;
+
+                // process the right arcs
+                for (ArcIt it = n.rightBegin(); it != n.rightEnd(); it++)
+                        pq.push(NodeDFS(it->getNodeID(), thisDist + deltaDist));
+        }
+}
+
+void DBGraph::getSubgraph(NodeID srcID, NodeID dstID, set<NodeID>& nodes)
+{
+        nodes.clear();
+
+        vector<NodeID> pq;
+        pq.push_back(srcID);
+
+        while (!pq.empty()) {
+                // get and erase the next node
+                NodeID thisID = pq.back();
+                pq.pop_back();
+
+                // if the node was visited before, get out
+                if (nodes.find(thisID) != nodes.end())
+                        continue;
+
+                // store node
+                nodes.insert(thisID);
+
+                // target reached
+                if (thisID == dstID)
+                        continue;
+
+                // process the right arcs
+                SSNode n = getSSNode(thisID);
+                for (ArcIt it = n.rightBegin(); it != n.rightEnd(); it++)
+                        pq.push_back(it->getNodeID());
+        }
 }

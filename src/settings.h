@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -34,11 +34,14 @@ private:
         // input file arguments
         std::string graphFilename;
         std::string readFilename;
+        std::string binGraphFilename;
 
         // options
-        bool noCorrectFlag;     // do not correct graph, only compute multiplicities
         bool useQualFlag;       // use per-base quality scores (q-mers)
-        double removeCoverage;  // in stage 1, remove all nodes with coverage <= to this threshold and all arcs with coverage 0
+        
+        bool approxInfFlag;          // use loopy belief propagation (from libdai) on full graph
+        bool mapAssignment;      // Compute the MAP assignment of multiplicities in the graph (probably only useful when using approximate inference)
+        bool singleCRF;          // Use one CRF that contains all disconnected components of the de Bruijn graph (not advised, only for testing purposes!)
 
         int numThreads;         // number of threads
 
@@ -53,13 +56,10 @@ private:
         double mmErrCov;        // initial error coverage estimate
         double mmODF;           // overdispersion factor
         int mmComponents;       // number of components in the mixture model
-        int mmPloidy;           // ploidy [1 for haploid; 2 for diploid]
 
         int emMaxIter;          // EM maximum number of iterations
         double emConvEps;       // EM convergence tolerance (epsilon)
         double emTrainSize;     // EM number of nodes/arcs to train the model
-
-        int cytGraphNode;       // Cytoscape graph center node
 
         int phredBase;          // ASCII value corresponding to Phred score Q=0
 
@@ -106,19 +106,29 @@ public:
         }
 
         /**
+         * Get the graph filename produced in stage 4
+         * @return The graph filename
+         */
+        std::string getStage4GraphFilename() const {
+                return graphFilename + ".st4";
+        }
+
+        /**
          * Get the node model filename produced in stage 2
          * @return The graph filename
          */
-        std::string getNodeModelFilename() const {
-                return "nodemodel.st2";
+        std::string getNodeModelFilename(bool cleaned=false) const {
+                std::string append = (cleaned) ? ".st3" : ".st2";
+                return "model.node" + append;
         }
 
         /**
          * Get the edge model filename produced in stage 2
          * @return The graph filename
          */
-        std::string getEdgeModelFilename() const {
-                return "edgemodel.st2";
+        std::string getEdgeModelFilename(bool cleaned=false) const {
+                std::string append = (cleaned) ? ".st3" : ".st2";
+                return "model.edge" + append;
         }
 
         /**
@@ -178,27 +188,36 @@ public:
         }
 
         /**
-         * Check whether or not graph needs to be corrected
-         * @return true when graph should not be corrected
-         */
-        bool noCorrect() const {
-                return noCorrectFlag;
-        }
-
-        /**
          * Use per-base quality scores
          * @return true for q-mer counts, false for k-mer counts
          */
         bool useQual() const {
                 return useQualFlag;
         }
-
+        
         /**
-         * Check if low coverage nodes and zero-coverage arcs should be removed in stage 1
-         * @return the cutoff value for coverage removal in stage 1, -1 if no coverage removal required
+         * Should approximate inference be used when computing all multiplicities?
+         * @return true if using approximate inference
          */
-        double preCorrect() const {
-                return removeCoverage;
+        bool approxInf() const {
+                return approxInfFlag;
+        }
+        
+        /**
+         * Use MAP assignments when computing multiplicities with approximate inference
+         * @return true for MAP, false otherwise
+         */ 
+        bool computeMAP() const {
+                return mapAssignment;
+        }
+        
+        /**
+         * Create one CRF that possibly contains multiple disconnected components
+         * of the de Bruijn graph (not advised, only used for testing purposes)
+         * @return true for one CRF, false for one CRF per connected components
+         */
+        bool useSingleCRF() const {
+                return singleCRF;
         }
 
         /**
@@ -273,14 +292,6 @@ public:
                 return mmComponents;
         }
 
-        /**
-         * Get the average sequencing error coverage (to initialize EM)
-         * @return The average sequencing error coverage (to initialize EM)
-         */
-        int getPloidy() const {
-                return mmPloidy;
-        }
-
         int getAbundanceMin() const {
                 return abundanceMin;
         }
@@ -326,11 +337,19 @@ public:
         }
 
         /**
-         * Get the Cytoscape graph center node (0 = none)
-         * @return The Cytoscape graph center node
+         * Get the CRF block size during multithreading
+         * @return The CRF block size during multithreading
          */
-        int getCytGraphNode() const {
-                return cytGraphNode;
+        size_t getCRFWorkSize() const {
+                return 64;
+        }
+
+        /**
+         * Get the maximum number of nodes visited during a DFS
+         * @return The maximum number of nodes visited
+         */
+        size_t getMaxDFSNodeVisited() const {
+                return 1024;
         }
 
         /**

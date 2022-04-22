@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -187,17 +187,17 @@ public:
 
         /**
          * Get the sequence implied by the alignment
-         * @param dbg Const-ref to the matching de Bruijn graph
+         * @param dBG Const-ref to the matching de Bruijn graph
          * @return Sequence string
          */
-        std::string getSequence(const DBGraph& dbg) const;
+        std::string getSequence(const DBGraph& dBG) const;
 
         /**
          * Get the average kmer coverage for a given graph alignment
-         * @param dbg Const-ref to the matching de Bruijn graph
+         * @param dBG Const-ref to the matching de Bruijn graph
          * @return The average kmer coverage
          */
-        double getAvgKmerCov(const DBGraph& dbg) const;
+        double getAvgKmerCov(const DBGraph& dBG) const;
 
         /**
          * Get a const-reference to the node alignments
@@ -230,7 +230,7 @@ public:
 class GraphAligner {
 
 private:
-        const DBGraph& dbg;     // const-ref to the underlying dbg
+        const DBGraph& dBG;     // const-ref to the underlying dBG
         size_t maxVisits;       // maximum number of nodes visited
         NWAligner aligner;      // alignment class
 
@@ -275,7 +275,7 @@ private:
          * @return The length of a node
          */
         size_t nodeLength(NodeID nodeID) {
-                return dbg.getSSNode(nodeID).length();
+                return dBG.getSSNode(nodeID).length();
         }
 
         /**
@@ -293,7 +293,7 @@ private:
          * @return Node position pair pointing to the end of a node
          */
         NodePosPair getNodeEnd(NodeID nodeID) {
-                return NodePosPair(nodeID, dbg.getSSNode(nodeID).length());
+                return NodePosPair(nodeID, dBG.getSSNode(nodeID).length());
         }
 
         /**
@@ -302,7 +302,7 @@ private:
          * @return Node position pair pointing to the end of a node
          */
         NodePosPair getNodeMargEnd(NodeID nodeID) {
-                return NodePosPair(nodeID, dbg.getSSNode(nodeID).getMarginalLength());
+                return NodePosPair(nodeID, dBG.getSSNode(nodeID).getMarginalLength());
         }
 
         /**
@@ -347,9 +347,9 @@ private:
 public:
         /**
          * Default constructor
-         * @param dbg de Bruijn graph structure
+         * @param dBG de Bruijn graph structure
          */
-        GraphAligner(const DBGraph& dbg);
+        GraphAligner(const DBGraph& dBG);
 
         /**
          * Set the maximum number of visited nodes in the search procedure

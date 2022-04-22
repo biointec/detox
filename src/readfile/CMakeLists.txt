@@ -1,1 +1,1 @@
-add_library(readfile sequencefile.cpp rawfile.cpp fastqfile.cpp fastafile.cpp readfile.cpp samfile.cpp)
+add_library(readfile seqfile.cpp fasta.cpp fastq.cpp)

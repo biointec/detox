@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -21,6 +21,9 @@
 
 #include "kmer/tkmer.h"
 #include "dsnode.h"
+
+#include <vector>
+#include <google/sparse_hash_map>
 
 // ============================================================================
 // NODE REPRESENTATIVE CLASS
@@ -75,7 +78,44 @@ public:
         operator NodeID() const {
                 return nodeID;
         }
+
+        /**
+         * Compute a hash function
+         * @return Hash value
+         */
+        size_t getHash() const {
+
+                size_t w = nodeID;
+                size_t hash = 0;
+                w = ~w + (w << 21);             // key = (key << 21) - key - 1;
+                w = w ^ (w >> 24);
+                w = (w + (w << 3)) + (w << 8);  // key * 265
+                w = w ^ (w >> 14);
+                w = (w + (w << 2)) + (w << 4);  // key * 21
+                w = w ^ (w >> 28);
+                w = w + (w << 31);
+                hash = hash ^ size_t(w);
+
+                return hash;
+        }
 };
+
+// ============================================================================
+// HASH FUNCTION
+// ============================================================================
+
+struct NodeHash {
+        size_t operator()(const NodeRep &nr) const {
+                return nr.getHash();
+        }
+};
+
+// ============================================================================
+// NODE MAP
+// ============================================================================
+
+template<class T>
+using NodeMap = google::sparse_hash_map<NodeRep, T, NodeHash>;
 
 // ============================================================================
 // SINGLE STRANDED NODE CLASS
@@ -621,6 +661,168 @@ public:
         static void setNodePointer(DSNode *nodes_) {
                 nodes = nodes_;
         }
+};
+
+// ============================================================================
+// NODE CHAIN CLASS
+// ============================================================================
+
+class NodeChain : public std::vector<NodeID>
+{
+private:
+        size_t count;   // number of times the nodechain was observed
+
+public:
+        /**
+         * Default constructor
+         */
+        NodeChain() : count(0) {}
+
+        /**
+         * Constructor from an input vector
+         * @param input Input vector
+         */
+        NodeChain(const std::vector<NodeID>& input) : count(1) {
+                for (const auto& it : input)
+                        push_back(it);
+        }
+
+        /**
+         * Constructor from an input vector range [first, last[
+         * @param first Iterator the first element
+         * @param last Iterator past the last element
+         */
+        NodeChain(std::vector<NodeID>::const_iterator first,
+                  std::vector<NodeID>::const_iterator last) : count(1)
+        {
+                if (last <= first)
+                        return;
+                reserve(last - first);
+                for (auto it = first; it < last; it++)
+                        push_back(*it);
+        }
+
+        /**
+         * Increment the count by one
+         */
+        void incrCount() {
+                count++;
+        }
+
+        /**
+         * Get the count
+         * @return count
+         */
+        size_t getCount() const {
+                return count;
+        }
+
+        /**
+         * Set the count
+         * @param target Target count
+         */
+        void setCount(size_t target) {
+                count = target;
+        }
+
+        /**
+         * Operator < overloading
+         * @param rhs Right hand side
+         */
+      /*  bool operator<(const NodeChain& rhs) const {
+                if (empty())
+
+                for (size_t i = 0; i < size(); i++)
+                        if ((*this)[i] != rhs[i])
+                                return (*this)[i] < rhs[i];
+                return false;
+        }*/
+
+        /**
+         * Operator < overloading
+         * @param rhs Right hand side
+         */
+        bool operator==(const NodeChain& rhs) const {
+                if (size() != rhs.size())
+                        return false;
+                for (size_t i = 0; i < size(); i++)
+                        if ((*this)[i] != rhs[i])
+                                return false;
+                return true;
+        }
+
+        /**
+         * Get the reverse complement of the node chain
+         * @return The reverse complementary chain
+         */
+        NodeChain getReverseComplement() const {
+                NodeChain copy = *this;
+
+                std::reverse(copy.begin(), copy.end());
+                for (size_t i = 0; i < copy.size(); i++)
+                        copy[i] = -copy[i];
+
+                return copy;
+        }
+
+        /**
+         * Get the representative node chain
+         * @return The representative node chain
+         */
+        NodeChain getRepresentative() const {
+                NodeChain RC = getReverseComplement();
+                return (RC < *this) ? RC : *this;
+        }
+
+        void revCompl() {
+                *this = getReverseComplement();
+        }
+
+        bool contains(const std::set<NodeRep>& noi) const {
+                for (auto it : *this)
+                        if (noi.find(NodeRep(it)) != noi.end())
+                                return true;
+                return false;
+        }
+
+        bool contains(NodeRep nr) const {
+                for (auto it : *this)
+                        if (NodeRep(it) == nr)
+                                return true;
+                return false;
+        }
+
+        bool contains(NodeID nodeID) const {
+                for (auto it : *this)
+                        if (it == nodeID)
+                                return true;
+                return false;
+        }
+
+        /**
+         * Operator<< overloading
+         * @param out Output file stream (input)
+         * @param ncc NodeChainContainer to display
+         * @return Output file stream
+         */
+        friend std::ostream &operator<<(std::ostream &out, const NodeChain& nc);
+
+        static bool compCov(const NodeChain& l, const NodeChain& r) {
+                return (l.getCount() < r.getCount());
+        }
+
+        /**
+         * Sort by length (long to short), then lexigraphically
+         */
+        static bool compLenLex(const NodeChain& l, const NodeChain& r) {
+                if (l.size() != r.size())
+                        return (l.size() > r.size());
+                for (size_t i = 0; i < l.size(); i++)
+                        if (l[i] != r[i])
+                                l[i] < r[i];
+                return false;
+        }
+
 };
 
 #endif

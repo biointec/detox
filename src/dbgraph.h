@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -22,6 +22,8 @@
 #include "kmer/tkmer.h"
 #include "ssnode.h"
 #include "kmernpp.h"
+#include "readfile/fastq.h"
+#include "readfile/fasta.h"
 
 #include <mutex>
 #include <vector>
@@ -33,7 +35,6 @@
 
 class Settings;
 class LibraryContainer;
-class ReadRecord;
 class Multiplicity;
 
 // ============================================================================
@@ -67,22 +68,22 @@ struct NodeDFSComp {
 };
 
 class NodeRepDepth {
-
+        
 public:
         NodeRep nodeRep;        // current node identifier
         int depth;              // depth of the current node
-
+        
         /**
          * Default constructor
          * @param nodeRep node identifier
          * @param depth depth of the current node
          */
         NodeRepDepth(NodeRep nodeRep, int depth) :
-                nodeRep(nodeRep), depth(depth) {};
+        nodeRep(nodeRep), depth(depth) {};
 };
 
 struct NodeRepComp {
-
+        
         /**
          * Compare by depth (use greater because priority_queue.top() returns
          * by default the greatest element. We want to return the smallest.)
@@ -114,6 +115,8 @@ private:
         NodeID numValidNodes;           // number of nodes
         ArcID numValidArcs;             // number of arcs
 
+        int alnVersion;                 // alignment version
+
         // ====================================================================
         // GRAPH MODIFICATION
         // ====================================================================
@@ -121,8 +124,17 @@ private:
         /**
          * Remove a node from the graph
          * @param nodeID node identifier
+         * @param newID node identifier in which original contents are found
          **/
-        void removeNode(NodeID nodeID);
+        void removeNode(NodeID nodeID, NodeID newID = 0);
+
+public:
+        /**
+         * Get the node identifier of a deleted node's identifier
+         * @param nodeID node identifier of the deleted node
+         * @return Identifier of the present node
+         */
+        NodeID getPresentNodeID(NodeID nodeID);
 
         /**
          * Remove an arc between two nodes
@@ -130,6 +142,18 @@ private:
          * @param rightID Identifier of the right node
          */
         void removeArc(NodeID leftID, NodeID rightID);
+
+        /**
+         * Remove all right arcs from a node
+         * @param nodeID Identifier of the node
+         */
+        void removeRightArcs(NodeID nodeID);
+
+        /**
+         * Remove all left arcs from a node
+         * @param nodeID Identifier of the node
+         */
+        void removeLeftArcs(NodeID nodeID);
 
         /**
          * Concatenation the linear path around a seed node
@@ -148,7 +172,7 @@ private:
          * @param rr Read record
          * @param table < Kmer, NPP > table
          */
-        void covCount(const ReadRecord& rr,
+        void covCount(const FastQRecord& rr,
                       const KmerNPPTable& table);
 
         /**
@@ -156,7 +180,7 @@ private:
          * @param inputs Library container with input read files
          * @param table < Kmer, NPP > table with all contig endpoint kmers
          */
-        void covCountThread(LibraryContainer& inputs,
+        void covCountThread(FastQReader& inputs,
                             const KmerNPPTable& table);
 
 public:
@@ -165,7 +189,7 @@ public:
          * @param settings Const-ref to settings object
          */
         DBGraph(const Settings& settings) : settings(settings), nodes(NULL),
-                arcs(NULL), numNodes(0), numArcs(0) {};
+                arcs(NULL), numNodes(0), numArcs(0), alnVersion(0) {};
 
         /**
          * Destructor
@@ -249,9 +273,19 @@ public:
         }
 
         /**
+         * Get a reference to an arc, given source and destination node
+         * @param srcID Source node identifier
+         * @param dstID Destination node identifier
+         * @return Reference to the arc
+         */
+        Arc& getArc(NodeID srcID, NodeID dstID) const {
+                return *getSSNode(srcID).rightArc(dstID);
+        }
+
+        /**
          * Check whether a node exists
          * @param nr Node representative
-         * @return true of false
+         * @return true or false
          */
         bool nodeExists(NodeRep nr) const {
                 if (nr.getNodeID() == 0)
@@ -262,7 +296,7 @@ public:
         }
 
         /**
-         * Check whether a edge exists
+         * Check whether a edge exists (and its adjacent nodes)
          * @param er Edge representative
          * @return true of false
          */
@@ -272,6 +306,37 @@ public:
                 if (!nodeExists(er.getDstID()))
                         return false;
                 return getSSNode(er.getSrcID()).rightArc(er.getDstID()) != NULL;
+        }
+
+        /**
+         * Check whether a path exists in the graph
+         * @param nc Node chain
+         * @return true or false
+         */
+        bool pathExists(const NodeChain& nc) const {
+                // note that edgeExists also checks the nodes
+                for (size_t i = 1; i < nc.size(); i++)
+                        if (!edgeExists(EdgeRep(nc[i-1], nc[i])))
+                                return false;
+                return true;
+        }
+
+        /**
+         * Set the flag1 of all nodes
+         * @param value Target value
+         */
+        void setAllFlags1(bool value) {
+                for (NodeID i = 1; i <= numNodes; i++)
+                        getSSNode(i).setFlag1(value);
+        }
+
+        /**
+         * Set the flag2 of all nodes
+         * @param value Target value
+         */
+        void setAllFlags2(bool value) {
+                for (NodeID i = 1; i <= numNodes; i++)
+                        getSSNode(i).setFlag2(value);
         }
 
         /**
@@ -349,10 +414,11 @@ public:
          * Check whether two NodePosPairs are consecutive in the graph
          * @param left Left NodePosPair
          * @param right Right NodePosPair
+         * @param offset Distance between the pairs
          * @return True if the NodePosPairs are consecutive
          */
         bool consecutiveNPP(const NodePosPair& left,
-                            const NodePosPair& right) const;
+                            const NodePosPair& right, size_t offset = 1) const;
 
         /**
          * Check whether two NodePosPairs cross an arc in the graph
@@ -414,6 +480,12 @@ public:
         void loadBinary(const std::string& filename);
 
         /**
+         * Write the graph's contigs in FASTA format
+         * @param filename Output filename
+         */
+        void writeContigs(const std::string& filename) const;
+
+        /**
          * Write a Cytoscape graph of the current graph
          * @param filename Filename of the cytoscape graph
          * @param nodes Nodes in subgraph
@@ -426,10 +498,10 @@ public:
         void writeCytoscapeGraph(const std::string& filename,
                                  std::vector<NodeID> nodes,
                                  std::vector<std::pair<NodeID, NodeID> > edges,
-                                 const std::map<NodeRep, Multiplicity>& estNodeMult,
-                                 const std::map<EdgeRep, Multiplicity>& estEdgeMult,
-                                 const std::map<NodeRep, int>& trueNodeMult,
-                                 const std::map<EdgeRep, int>& trueEdgeMult) const;
+                                 const NodeMap<Multiplicity>& estNodeMult,
+                                 const EdgeMap<Multiplicity>& estEdgeMult,
+                                 const NodeMap<int>& trueNodeMult,
+                                 const EdgeMap<int>& trueEdgeMult) const;
 
         /**
          * Check the validity of the de Bruijn graph
@@ -437,15 +509,16 @@ public:
         void sanityCheck();
 
         /**
-         * Get a subgraph of the de Bruijn graph
-         * @param todo Priority queue with nodes to handle
-         * @param nodes Set of nodes representatives in the subgraph (output)
-         * @param edges Set of edge representatives in the subgraph (output)
-         * @param maxDepth Maximum depth (in terms of number of nodes)
+         * Get the entire de Bruijn graph. Output will contain both nodeID
+         * and -nodeID.
+         * @param nodes Vector of nodes in the graph (output)
+         * @param edges Vector of edges in the graph (output)
          */
-        void getSubgraph(std::priority_queue<NodeRepDepth, std::vector<NodeRepDepth>,
-                         NodeRepComp>& todo, std::set<NodeRep>& nodes,
-                         std::set<EdgeRep>& edges, size_t maxDepth) const;
+        void getGraph(std::vector<NodeID>& nodes, std::vector<EdgeID>& edges);
+        
+        /*void getSubgraph(std::priority_queue<NodeRepDepth, std::vector<NodeRepDepth>,
+                                  NodeRepComp>& todo, std::set<NodeRep>& nodes,
+                                  std::set<EdgeRep>& edges, size_t maxDepth) const;*/
 
         /**
          * Get a subgraph of the de Bruijn graph
@@ -454,8 +527,8 @@ public:
          * @param edges Set of edge representatives in the subgraph (output)
          * @param maxDepth Maximum depth (in terms of number of nodes)
          */
-        void getSubgraph(NodeRep seedNode, std::set<NodeRep>& nodes,
-                         std::set<EdgeRep>& edges, size_t maxDepth = 0) const;
+        /*void getSubgraph(NodeRep seedNode, std::set<NodeRep>& nodes,
+                         std::set<EdgeRep>& edges, size_t maxDepth = 0) const;*/
 
         /**
          * Get a subgraph of the de Bruijn graph
@@ -464,19 +537,20 @@ public:
          * @param edges Set of edge representatives in the subgraph (output)
          * @param maxDepth Maximum depth (in terms of number of nodes)
          */
-        void getSubgraph(EdgeRep seedEdge, std::set<NodeRep>& nodes,
-                         std::set<EdgeRep>& edges, size_t maxDepth = 0) const;
+        /*void getSubgraph(EdgeRep seedEdge, std::set<NodeRep>& nodes,
+                         std::set<EdgeRep>& edges, size_t maxDepth = 0) const;*/
+                         
 
         /**
-         * Get a directed subgraph of the de Bruijn graph
+         * Get a directed subgraph of the de Bruijn graph. Output can contain
+         * both nodeID and -nodeID in presence of palindromic repeats
          * @param seedNode Seed node
          * @param nodes Vector of nodes in the subgraph (output)
          * @param edges Vector of edges in the subgraph (output)
          * @param maxDepth Maximum depth (in terms of number of nodes)
          */
         void getSubgraph(NodeID seedNode, std::vector<NodeID>& nodes,
-                         std::vector<std::pair<NodeID, NodeID> >& edges,
-                         size_t maxDepth = 0) const;
+                         std::vector<EdgeID>& edges, size_t maxDepth = 0) const;
 
         /**
          * Create a vector of node representations stored in a file
@@ -507,18 +581,27 @@ public:
         std::vector<EdgeRep> getEdgeReps(size_t N) const;
 
         /**
-         * Get a nodes with an average coverage below the threshold
+         * Get nodes with an average coverage below the threshold
          * @param threshold Coverage threshold
          * @return A vector of node representations
          */
         std::vector<NodeRep> getLowCovNodes(double threshold) const;
 
         /**
+         * Get edges with a coverage below the threshold
+         * @param threshold Coverage threshold
+         * @return A vector of edge representations
+         */
+        std::vector<EdgeRep> getLowCovEdges(double threshold) const;
+
+        /**
          * Get tips with an average coverage below the threshold
          * @param threshold Coverage threshold
+         * @param maxLen Maximum marginal length (value 0 = do not check)
          * @return A vector of node representations
          */
-        std::vector<NodeRep> getLowCovTips(double threshold) const;
+        std::vector<NodeRep> getLowCovTips(double threshold,
+                                           size_t maxLen = 0) const;
 
         /**
          * Get bubbles with an average coverage below the threshold
@@ -556,7 +639,7 @@ public:
          * @param output An stl string (output)
          */
         void convertNodesToString(const std::vector<NodeID> &nodeSeq,
-                                  std::string &output);
+                                  std::string &output) const;
 
         /**
          * Concatentate linear paths
@@ -569,12 +652,32 @@ public:
          * @param nodes Vector of node representatives to remove
          */
         void removeNodes(const std::vector<NodeRep>& nodes);
-
+        
         /**
          * Remove of list of edges from the graph
          * @param nodes Vector of edge representatives to remove
          */
         void removeEdges(const std::vector<EdgeRep>& edges);
+
+        
+        /**
+         * Get a list of nodes reachable from srcID as well as their shortest
+         * pathlength from srcID (pathlength excludes both srcID and target)
+         * @param srcID Source node identifier
+         * @param nodeDist Map with <NodeID, pathlength> (output)
+         * @param maxLen Maximum length (input)
+         * @param maxNode Maximum number of nodes visited (input)
+         */
+        void getSubgraph(NodeID srcID, int maxLen, int maxNodes,
+                         std::map<NodeID, int>& nodeDist);
+
+        /**
+         * Get a list of nodes between tangle srcID and dstID
+         * @param srcID Source node identifier
+         * @param dstID Destination node identifier
+         * @param nodes Set with nodes in the subgraph (including srcID/dstID)
+         */
+        void getSubgraph(NodeID srcID, NodeID dstID, std::set<NodeID>& nodes);
 
         /**
          * Get node coverage histogram

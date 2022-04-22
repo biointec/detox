@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -16,8 +16,8 @@
  *   along with this program; if not, see <https://www.gnu.org/licenses/>.    *
  ******************************************************************************/
 
-#ifndef READFILE_H
-#define READFILE_H
+#ifndef SEQFILE_H
+#define SEQFILE_H
 
 #include <string>
 #include <iostream>
@@ -36,62 +36,16 @@
 // ============================================================================
 
 typedef enum { READ, WRITE } ReadFileMode;
+typedef enum { FASTQ, FASTQ_GZ, FASTA, FASTA_GZ, UNKNOWN_FT } FileType;
+
+std::ostream &operator<<(std::ostream &out, const FileType &fileType);
 
 // ============================================================================
-// READ RECORD
+// AUXILIARY ROUTINES
 // ============================================================================
 
-class ReadRecord {
-
-public:
-        /**
-         * Default constructor
-         */
-        ReadRecord() {}
-
-        void clear() {
-                preRead.clear();
-                read.clear();
-                qual.clear();
-                postRead.clear();
-        }
-
-        std::string getRead() const {
-                return read;
-        }
-
-        std::string& getRead() {
-                return read;
-        }
-
-        std::vector<int> getNodeChain() const {
-                return nodeChain;
-        }
-
-        std::vector<int>& getNodeChain() {
-                return nodeChain;
-        }
-
-        size_t getReadLength() const {
-                return read.length();
-        }
-
-        std::string getQStr() const {
-                return qual;
-        }
-
-        std::string& getQStr() {
-                return qual;
-        }
-
-//private:
-        std::string preRead;    // everything in the record that precedes the read
-        std::string read;       // read itself
-        std::string qual;       // quality string
-        std::string postRead;   // everything in the record that procedes the read
-
-        std::vector<int> nodeChain; // node chain to which the read aligns
-};
+std::pair<FileType, std::string> getFileType(const std::string& fn);
+bool fileExists(const std::string& fn);
 
 // ============================================================================
 // READFILE HANDLER
@@ -112,9 +66,8 @@ public:
          * Open a file with a given filename
          * @param filename File to open
          * @param mode Read (default) or write
-         * @return True upon succes, false otherwise
          */
-        virtual bool open(const std::string& filename,
+        virtual void open(const std::string& filename,
                           ReadFileMode mode = READ) = 0;
 
         /**
@@ -127,7 +80,7 @@ public:
          * Read a line from file
          * @return Pointer to an internal buffer containing the line
          */
-        virtual const char *getLine() = 0;
+        virtual void getLine(std::string& line) = 0;
 
         /**
          * Write a line to file
@@ -172,12 +125,11 @@ class RegularReadFileHandler : public ReadFileHandler {
 
 protected:
         FILE *fh;                               // file handler
-        int bufSize;
-        char *buffer;
+        const int bufSize = 1024;               // buffer size
+        char *buffer;                           // buffer
 
 public:
         RegularReadFileHandler() {
-                bufSize = 1024;
                 buffer = (char*)malloc(bufSize * sizeof(char));
         }
 
@@ -192,9 +144,8 @@ public:
          * Open a file with a given filename
          * @param filename File to open
          * @param mode Read (default) or write
-         * @return True upon succes, false otherwise
          */
-        bool open(const std::string& filename, ReadFileMode mode = READ);
+        void open(const std::string& filename, ReadFileMode mode = READ);
 
         /**
          * Check if the input is still valid
@@ -207,31 +158,14 @@ public:
         /**
          * Read a line from file
          */
-        const char *getLine() {
-                size_t readSize = bufSize;
-                size_t bufOffset = 0;
+        void getLine(std::string& line) {
+                line.clear();
 
-                buffer[0] = '\0';
-                buffer[bufSize-1] = '\n'; // make the final charachter non-terminating
-
-                do {
-                        // the if-statement avoids a compiler warning
-                        if (fgets(buffer + bufOffset, readSize, fh) != NULL) ;
-
-                        // check if we're done reading the string
-                        if (buffer[bufSize-1] != '\0' || buffer[bufSize-2] == '\n')
-                                return buffer;
-
-                        readSize = bufSize + 1;
-                        bufOffset = bufSize - 1;
-                        bufSize *= 2;
-
-                        buffer = (char*)realloc(buffer, bufSize);
-                        buffer[bufSize-1] = '\n';
-
-                } while (good());
-
-                return buffer;
+                while (fgets(buffer, bufSize, fh) != NULL) {
+                        line.append(buffer);
+                        if (line.back() == '\n')
+                                break;
+                }
         }
 
         /**
@@ -289,16 +223,15 @@ public:
 class GZipReadFileHandler : public ReadFileHandler {
 
 protected:
-        gzFile ifs;     // gzipped input file stream
-        int bufSize;
-        char *buffer;
+        gzFile ifs;                     // gzipped input file stream
+        const int bufSize = 1024;       // buffer size
+        char *buffer;                   // buffer
 
 public:
         /**
          * Default constructor
          */
         GZipReadFileHandler() {
-                bufSize = 1024;
                 buffer = (char*)malloc(bufSize * sizeof(char));
         }
 
@@ -315,7 +248,7 @@ public:
          * @param mode Read (default) of write
          * @return True upon succes, false otherwise
          */
-        bool open(const std::string& filename, ReadFileMode mode);
+        void open(const std::string& filename, ReadFileMode mode);
 
         /**
          * Check if the input is still valid
@@ -325,30 +258,14 @@ public:
                 return !gzeof(ifs);
         }
 
-        const char *getLine()  {
-                size_t readSize = bufSize;
-                size_t bufOffset = 0;
+        void getLine(std::string& line)  {
+                line.clear();
 
-                buffer[0] = '\0';
-                buffer[bufSize-1] = '\n'; // make the final charachter non-terminating
-
-                do {
-                        gzgets(ifs, buffer + bufOffset, readSize);
-
-                        // check if we're done reading the string
-                        if (buffer[bufSize-1] != '\0' || buffer[bufSize-2] == '\n')
-                                return buffer;
-
-                        readSize = bufSize + 1;
-                        bufOffset = bufSize - 1;
-                        bufSize *= 2;
-
-                        buffer = (char*)realloc(buffer, bufSize);
-                        buffer[bufSize-1] = '\n';
-
-                } while (good());
-
-                return buffer;
+                while (gzgets(ifs, buffer, bufSize) != NULL) {
+                        line.append(buffer);
+                        if (line.back() == '\n')
+                                break;
+                }
         }
 
         /**
@@ -400,28 +317,49 @@ public:
 #endif
 
 // ============================================================================
-// READFILE
+// SEQUENCE FILE
 // ============================================================================
 
-class ReadFile {
+class SeqFile {
 
 protected:
-
         ReadFileHandler *rfHandler;     // read file handler
 
 public:
         /**
          * Default constructor
+         */
+        SeqFile() : rfHandler(NULL) {};
+
+        /**
+         * Default constructor
          * @param gzipped True if the file is gzipped
          */
-        ReadFile(bool gzipped);
+        SeqFile(bool gzipped);
 
         /**
          * Destructor
          */
-        virtual ~ReadFile() {
+        virtual ~SeqFile() {
                 delete rfHandler;
         }
+
+        /**
+         * Default, deleted copy and default move constructor
+         */
+        SeqFile(const SeqFile&) = delete;
+        SeqFile(SeqFile&& rhs) {
+                std::swap(rfHandler, rhs.rfHandler);
+        }
+
+        /**
+         * Deleted copy and default move assignement operator
+         */
+        SeqFile& operator=(const SeqFile&) = delete;
+        SeqFile& operator=(SeqFile&& rhs) {
+                std::swap(rfHandler, rhs.rfHandler);
+                return *this;
+        };
 
         /**
          * Open a file
@@ -430,6 +368,46 @@ public:
          */
         void open(const std::string& filename, ReadFileMode mode = READ) {
                 rfHandler->open(filename, mode);
+        }
+
+        /**
+         * Read a line from file
+         * @line Line that was read (empty if failed)
+         */
+        void getLine(std::string& line) {
+                rfHandler->getLine(line);
+        }
+
+        /**
+         * Write a line to file
+         * @param line String to write
+         */
+        void writeLine(const std::string &line) {
+                rfHandler->writeLine(line);
+        }
+
+        /**
+         * Write a character to file
+         * @param c Character to write
+         */
+        void writeChar(char c) {
+                rfHandler->writeChar(c);
+        }
+
+        /**
+         * Peek at the next character in the stream
+         * @return The character
+         */
+        char peekCharacter() {
+                return rfHandler->peekCharacter();
+        }
+
+        /**
+         * Get one character from the stream
+         * @return The character
+         */
+        char getCharacter() {
+                return rfHandler->getCharacter();
         }
 
         /**
@@ -453,25 +431,6 @@ public:
         void close() {
                 rfHandler->close();
         }
-
-        /**
-         * Get the next read from a file
-         * @param read String containing the read (output)
-         */
-        virtual bool getNextRead(std::string &read) = 0;
-
-        /**
-         * Get the next record from a file
-         * @param record Record to store output
-         * @return true upon succesful reading
-         */
-        virtual bool getNextRecord(ReadRecord& record) = 0;
-
-        /**
-         * Write a record to file
-         * @param record Record to write
-         */
-        virtual void writeRecord(const ReadRecord& record);
 };
 
 #endif

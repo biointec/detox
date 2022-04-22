@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -75,6 +75,14 @@ public:
          * @return Expected multiplicity
          */
         int getExpMult() const;
+
+        /**
+         * Decrement the multiplicity (e.g. after some repeat resolution)
+         * @param decreaseBy Value with which multiplicity should be decreased
+         */
+        void decrementMult(int decreaseBy = 1) {
+                firstMult -= decreaseBy;
+        }
 
         /**
          * Get the log(odds ratio) of the multiplicity being equal to the
@@ -203,6 +211,19 @@ public:
         double getWeight(int mult) const {
                 return (mult < (int)logw.size()) ?
                         exp(logw[mult]) : exp(logw.back());
+        }
+
+        /**
+         * Set the weights (uniform accross multiplicities)
+         * @param w Desired weight
+         */
+        void setWeightUniform(double w) {
+                for (auto& it : logw)
+                        it = log(w);
+        }
+        
+        void setZeroWeight(double w) {
+                logw[0] = log(w);
         }
 
         /**

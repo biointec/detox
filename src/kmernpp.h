@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -100,7 +100,7 @@ public:
          * @param npp Right-hand side NPP
          * @return Output stream with the NPP added to it
          */
-        friend std::ostream& operator<<(std::ostream &out, NodePosPair& npp) {
+        friend std::ostream& operator<<(std::ostream &out, const NodePosPair& npp) {
                 out << npp.first << " (" << npp.second << ")";
                 return out;
         }
