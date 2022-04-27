@@ -76,6 +76,8 @@ void Settings::printUsage() const
         "  -em-train-size\tNumber of nodes/arcs to use for EM training [default = 1e4]\n\n"
 
         "  -phred-base\t\tASCII value corresponding to Phred score Q = 0 [default = 33]\n\n"
+        "  -vis-subgraph\t\tCentral nodeID around which a subgraph will be visualised [default = 0]\n"
+        "               \t\t if value = 0, no visualisation and normal pipeline will be run\n\n"
 
         "Report bugs to Jan Fostier <jan.fostier@ugent.be>" << endl;
 }
@@ -84,7 +86,7 @@ Settings::Settings(int argc, char ** argv) : useQualFlag(false), approxInfFlag(f
         mapAssignment(false), singleCRF(false), numThreads(thread::hardware_concurrency()),
         abundanceMin(-1), crfDepth(5), crfMargin(2), crfFlow(1e7), crfMaxFact(1e6),
         mmCov(-1.0), mmErrCov(1.0), mmODF(1.5), mmComponents(6), emMaxIter(25),
-        emConvEps(1e-3), emTrainSize(1e4), phredBase(33)
+        emConvEps(1e-3), emTrainSize(1e4), phredBase(33), visGraphNode(0)
 {
         const int reqArguments = 2;     // not counting argument 0
 
@@ -169,6 +171,8 @@ Settings::Settings(int argc, char ** argv) : useQualFlag(false), approxInfFlag(f
                         emTrainSize = atof(argv[i+1]);
                 } else if (arg == "-phred-base") {
                         phredBase = atoi(argv[i+1]);
+                } else if (arg == "-vis-subgraph") {
+                        visGraphNode = atoi(argv[i+1]);
                 } else {
                         cerr << "Unknown argument: " << argv[i] << endl;
                         printUsage();

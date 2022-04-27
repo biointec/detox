@@ -220,3 +220,5 @@ If you see that peaks of the estimated distributions do not correspond with the 
 You can visualize the final de Bruijn graph using [Cytoscape](https://cytoscape.org/)
 
 The graph is provided as two files `Cytograph.full.nodes` and `Cytograph.full.arcs`. Within Cytoscape you first import the `.arcs` file with `File > Import > Network from file...` and then you import the `.nodes` file with `File > Import > Table from file...`
+
+Additionally, you can rerun Detox with a `-vis-subgraph n` option to export a subgraph of the de Bruijn graph around node `n` (size of the subgraph is specified with the `-crf-nb-size` option. For more information about how to obtain these Cytoscape files and how to visualise them, see the [visualisation folder](visualisation/). There you will also find a small example.

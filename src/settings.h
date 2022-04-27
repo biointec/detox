@@ -34,7 +34,6 @@ private:
         // input file arguments
         std::string graphFilename;
         std::string readFilename;
-        std::string binGraphFilename;
 
         // options
         bool useQualFlag;       // use per-base quality scores (q-mers)
@@ -62,6 +61,7 @@ private:
         double emTrainSize;     // EM number of nodes/arcs to train the model
 
         int phredBase;          // ASCII value corresponding to Phred score Q=0
+        int visGraphNode;       // Node around which neighbourhood to visualise is centered
 
         /**
          * Print usage to stdout
@@ -359,6 +359,15 @@ public:
         int getPhredBase() const {
                 return phredBase;
         }
+        
+        /**
+         * Get central node around which a neighbourhood should be visualised
+         * No visualisation if value == 0
+         * @return nodeID of central node
+         */
+        int getVisGraphNode() const {
+                return visGraphNode;
+        }
 
         /**
          * Check if necessary to execute stage 1
@@ -375,6 +384,16 @@ public:
         bool stageTwoNecessary() const {
                 return !(Util::fileExists(getNodeModelFilename()) &&
                          Util::fileExists(getEdgeModelFilename()));
+        }
+        
+        /**
+         * Check if necessary to execute stage 3
+         * @return true or false
+         */
+        bool stageThreeNecessary() const {
+                return (!Util::fileExists(getStage3GraphFilename()) || 
+                        !Util::fileExists(getNodeModelFilename(true)) || 
+                        !Util::fileExists(getEdgeModelFilename(true)));
         }
 };
 

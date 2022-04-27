@@ -160,7 +160,7 @@ class BP : public DAIAlgFG {
             ResInitType resinit;
             
             /// For output naming
-            size_t modelcount;
+            std::string modelcount;
             
             /// Initial splash size
             size_t splashsize;

@@ -695,8 +695,8 @@ void CRFSolver::approxMult(NodeMap<Multiplicity>& nodeMult,
                         const CovModel& nodeCovModel,
                         EdgeMap<Multiplicity>& edgeMult,
                         const CovModel& edgeCovModel,
-                        size_t modelCount,
-                        bool MAP)
+                        string modelID,
+                        bool MAP, bool visualise)
 {
         map<NodeRep, int> node2var;
         map<EdgeRep, int> edge2var;
@@ -746,18 +746,19 @@ void CRFSolver::approxMult(NodeMap<Multiplicity>& nodeMult,
                 //opts.set("damping", 0.2);
         }
         
-        opts.set("modelcount", modelCount);
+        opts.set("modelcount", modelID);
         
-        if (opts.getStringAs<size_t>("verbose") == 4){
+        if (opts.getStringAs<size_t>("verbose") == 4 || visualise){
                 map<size_t, size_t> nodevars;
                 for (const auto it : nodes)
                         nodevars[node2var[it]] = it.getNodeID();
                 cout << "writing FG representation ...." << endl;
                 Util::startChrono();
-                fullFG.WriteToFile("fullFG.fg", 5);
+                string fgfn = "factorGraph." + modelID + ".fg";
+                fullFG.WriteToFile(fgfn.c_str(), 5);
                 ofstream cytnodes, cytarcs;
-                cytnodes.open("factorgraph.cyt.nodes");
-                cytarcs.open("factorgraph.cyt.arcs");
+                cytnodes.open("factorgraph." + modelID + ".cyt.nodes");
+                cytarcs.open("factorgraph." + modelID + ".cyt.arcs");
                 fullFG.dBGfg2Cytoscape(cytarcs, cytnodes,nodevars);
                 cytnodes.close();
                 cytarcs.close();
@@ -854,8 +855,8 @@ void CRFSolver::approxSubgraphMult(NodeRep node,
 {
 	getSubgraph(node, graphDepth);
 
-        size_t dummy = 0;
-	approxMult(nodeMult, nodeCovModel, edgeMult, edgeCovModel, dummy, MAP);
+        string modelIdentifier = to_string(node.getNodeID()) + ".nb" + to_string(graphDepth);
+	approxMult(nodeMult, nodeCovModel, edgeMult, edgeCovModel, modelIdentifier, MAP, true);
 }
 
 // ============================================================================
@@ -988,7 +989,7 @@ void CRFMult::approxMultAll(NodeMap<Multiplicity>& nodeMult,
                 CRFSolver solver(dBG, multMargin, maxFactorSize, flowStrength, nodes, edges);
                 solver.approxMult(nodeMult, nodeCovModel,
                                   edgeMult, edgeCovModel,
-                                  ctr, MAP);
+                                  "full." + to_string(ctr), MAP);
         } else {
                 Bitvec handled(dBG.getNumNodes()+1);
                 for(NodeRep nr : dBG.getNodeReps(dBG.getNumValidNodes())){
@@ -1002,7 +1003,7 @@ void CRFMult::approxMultAll(NodeMap<Multiplicity>& nodeMult,
                         }
                         solver.approxMult(nodeMult, nodeCovModel,
                                         edgeMult, edgeCovModel,
-                                        ctr, MAP);
+                                        "full." + to_string(ctr), MAP);
                         for(NodeID id : inSubgraph)
                                 handled[abs(id)] = true;
                         ctr++;
@@ -1261,3 +1262,4 @@ int CRFMult::computeMultEM(NodeMap<Multiplicity>& nodeMult,
 
         return (iter);
 }
+

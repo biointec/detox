@@ -151,6 +151,43 @@ void computeMultiplicities(DBGraph& dBG, Settings& settings,
                 myCRFMult.computeMult(nodeMult, nodeModel, edgeMult, edgeModel);
 }
 
+void readTrueMultiplicities(NodeMap<int>& trueNodeMult,
+                            EdgeMap<int>& trueEdgeMult,
+                            string tnmF, string temF){
+        ifstream ifs(tnmF);
+        if (!ifs)
+                cerr << "Could not find true nodes multiplicities file...\n"
+                "True node multiplicities will be set to -1\n";
+        
+        while (ifs) {
+                NodeID nodeID; int m;
+                ifs >> nodeID >> m;
+                if (!ifs)
+                        break;
+                auto it = trueNodeMult.find(nodeID);
+                if (it != trueNodeMult.end())
+                        it->second = m;
+        }
+        ifs.close();
+        
+        ifs.open(temF);
+        if (!ifs)
+                cerr << "Could not find true edges multiplicities file...\n"
+                "True edge multiplicities will be set to -1\n";
+        
+        while (ifs) {
+                NodeID srcID, dstID; int m;
+                ifs >> srcID >> dstID >> m;
+                if (!ifs)
+                        break;
+                auto it = trueEdgeMult.find(EdgeRep(srcID, dstID));
+                if (it != trueEdgeMult.end())
+                        it->second = m;
+        }
+        ifs.close();
+}
+
+
 void drawFullCytoGraph(Settings& settings, DBGraph& dBG) 
 {
         vector<NodeID> nID; vector<EdgeID> eID;
@@ -244,6 +281,93 @@ void drawFullCytoGraph(Settings& settings, DBGraph& dBG)
         cout << "Writing Cytoscape graph... " << endl;
         dBG.writeCytoscapeGraph("Cytograph.full",
                                 nID, eID,
+                                estNodeMult, estEdgeMult,
+                                trueNodeMult, trueEdgeMult);
+}
+
+void visualiseSubgraph(Settings& settings){
+        cout << "\nVisualising neighbourhood of size " 
+                << settings.getCRFDepth() << " around node "
+                << settings.getVisGraphNode() 
+                << "\n==================================================\n" << endl;
+        
+        NodeID noi = settings.getVisGraphNode();
+        string ifn;
+        bool corrected;
+        if ( ! settings.stageThreeNecessary() ){
+                cout << "\nUsing cleaned de Bruijn graph of stage 3\n" << endl;
+                ifn = settings.getStage3GraphFilename();
+                corrected  = true;
+        } else {
+                cout << "\nUsing uncleaned de Bruijn graph of stage 1\n" << endl;
+                ifn = settings.getStage1GraphFilename();
+                corrected = false;
+        }
+        
+        DBGraph dBG(settings);
+        dBG.loadBinary(ifn);
+        
+        if((noi < -dBG.getNumNodes()) || (noi > dBG.getNumNodes()))
+                throw runtime_error("Specified node id of " + to_string(noi) +
+                                        " does not exist in the graph");
+        
+        if(! dBG.getSSNode(noi).isValid())
+                throw runtime_error("Specified node id of " + to_string(noi) +
+                                        " does not exist in the graph");
+        
+        CovModel nodeModel(settings.getNodeModelFilename(corrected));
+        CovModel edgeModel(settings.getEdgeModelFilename(corrected));
+        
+        cout << "Node model: " << nodeModel << endl;
+        cout << "Edge model: " << edgeModel << endl;
+        
+        vector<NodeID> nodes;
+        vector<pair<NodeID, NodeID> > edges;
+        
+        dBG.getSubgraph(noi, nodes, edges, settings.getCRFDepth());
+        
+        vector<NodeRep> nodeReps(nodes.begin(), nodes.end());
+        vector<EdgeRep> edgeReps(edges.begin(), edges.end());
+        
+        // Convert estimated node/edge multiplicities to lookup table
+        NodeMap<Multiplicity> estNodeMult;
+        EdgeMap<Multiplicity> estEdgeMult;
+        
+        if (settings.approxInf()){
+                CRFSolver myCRFSolver(dBG, settings.getCRFMargin(),
+                                      settings.getCRFMaxFactSize(),
+                                      settings.getCRFFlowStrength());
+                myCRFSolver.approxSubgraphMult(noi,
+                                               estNodeMult, estEdgeMult,
+                                               nodeModel, edgeModel, settings.getCRFDepth(), settings.computeMAP());
+        }else{
+                CRFMult myCRFMult(dBG, settings.getCRFDepth(),
+                                  settings.getCRFMargin(),
+                                  settings.getCRFMaxFactSize(),
+                                  settings.getCRFFlowStrength(),
+                                  settings.getNumThreads(),
+                                  settings.getThreadGraphWorkSize());
+                populateNodeMult(estNodeMult, nodeReps);
+                populateEdgeMult(estEdgeMult, edgeReps);
+                
+                myCRFMult.computeMult(estNodeMult, nodeModel, estEdgeMult, edgeModel);
+        }
+        
+        NodeMap<int> trueNodeMult; EdgeMap<int> trueEdgeMult;
+        transform(nodeReps.begin(), nodeReps.end(),
+                  inserter(trueNodeMult, trueNodeMult.end()),
+                  [](const NodeRep& nr) { return make_pair(nr, Multiplicity(-1)); });
+        transform(edgeReps.begin(), edgeReps.end(),
+                  inserter(trueEdgeMult, trueEdgeMult.end()),
+                  [](const EdgeRep& er) { return make_pair(er, Multiplicity(-1)); });
+        
+        readTrueMultiplicities(trueNodeMult, trueEdgeMult, 
+                               settings.getTrueNodeMultFilename() + (corrected ? "" : ".st1"),
+                               settings.getTrueEdgeMultFilename() + (corrected ? "" : ".st1"));
+        
+        cout << "Writing Cytoscape graph... " << endl;
+        dBG.writeCytoscapeGraph("cytgraph" + to_string(noi) + "nb" + to_string(settings.getCRFDepth()),
+                                nodes, edges,
                                 estNodeMult, estEdgeMult,
                                 trueNodeMult, trueEdgeMult);
 }
@@ -618,7 +742,7 @@ void StageFourComputeMult(Settings& settings)
         cout << "Loading graph from file: " << ifn << "..."; cout.flush();
         Util::startChrono();
         dBG.loadBinary(ifn);
-        cout << "\n\tLoaded graph with" << dBG.getNumValidNodes() << " nodes and "
+        cout << "\n\tLoaded graph with " << dBG.getNumValidNodes() << " nodes and "
         << dBG.getNumValidArcs() << " arcs (" << Util::stopChronoStr() << ")\n";
         
         
@@ -655,12 +779,12 @@ void StageFourComputeMult(Settings& settings)
                 nodeModel = CovModel(settings.getNodeModelFilename(true));
                 edgeModel = CovModel(settings.getEdgeModelFilename(true));
         } else {
-                cout << "Initial coverage estimate: " << fixed << initCov << endl;
+                cout << "\nStage 3 model files not found, retraining model...\nInitial coverage estimate: " << fixed << initCov << endl;
                 
                 cout.precision(2);
                 
                 trainModel(dBG, settings,
-                           nodeModel, edgeModel);
+                           nodeModel, edgeModel, true);
         }
         
         cout << "Node model: " << nodeModel << endl;
@@ -745,8 +869,13 @@ int main(int argc, char** argv)
 #endif
                 stageOne(settings, libraries);
                 stageTwo(settings);
-                stageThreeCorrectGraph(settings);
-                StageFourComputeMult(settings);
+                
+                if(settings.getVisGraphNode() > 0) {
+                        visualiseSubgraph(settings);
+                } else {
+                        stageThreeCorrectGraph(settings);
+                        StageFourComputeMult(settings);
+                }
 
         } catch (exception& e) {
                 cerr << "Fatal error: " << e.what() << endl;

@@ -341,8 +341,8 @@ public:
                         const CovModel& nodeCovModel,
                         EdgeMap<Multiplicity>& edgeMult,
                         const CovModel& edgeCovModel, 
-                        size_t modelCount,
-                        bool MAP);
+                        std::string modelID,
+                        bool MAP, bool visualise = false);
 };
 
 // ============================================================================

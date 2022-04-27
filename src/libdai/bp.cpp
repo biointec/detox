@@ -76,9 +76,9 @@ void BP::setProperties( const PropertySet &opts ) {
     else 
         props.resinit = Properties::ResInitType::MESSAGE;
     if ( opts.hasKey("modelcount") )
-        props.modelcount = opts.getStringAs<size_t>("modelcount");
+        props.modelcount = "modelcount";
     else
-        props.modelcount = 0;
+        props.modelcount = "0";
     if (opts.hasKey("splashsize"))
             props.splashsize = opts.getStringAs<size_t>("splashsize");
     else
@@ -336,10 +336,10 @@ Real BP::run() {
     size_t timesNVNCincreased = 0;
     
     if( props.verbose >=3){
-        string filenameV = name()+"_"+to_string((int)props.inference)+"_"+to_string((int)props.updates)+"_"+to_string((int)props.modelcount)+"_variableBeliefDiff.tsv";
-        string filenameF = name()+"_"+to_string((int)props.inference)+"_"+to_string((int)props.updates)+"_"+to_string((int)props.modelcount)+"_factorBeliefDiff.tsv";
-        string filenameNC = name()+"_"+to_string((int)props.inference)+"_"+to_string((int)props.updates)+"_"+to_string((int)props.modelcount)+"_notConverged.tsv";
-        string filenameE = name()+"_"+to_string((int)props.inference)+"_"+to_string((int)props.updates)+"_"+to_string((int)props.modelcount)+"_messageFreq.tsv";
+        string filenameV = name()+"_"+to_string((int)props.inference)+"_"+to_string((int)props.updates)+"_"+props.modelcount+"_variableBeliefDiff.tsv";
+        string filenameF = name()+"_"+to_string((int)props.inference)+"_"+to_string((int)props.updates)+"_"+props.modelcount+"_factorBeliefDiff.tsv";
+        string filenameNC = name()+"_"+to_string((int)props.inference)+"_"+to_string((int)props.updates)+"_"+props.modelcount+"_notConverged.tsv";
+        string filenameE = name()+"_"+to_string((int)props.inference)+"_"+to_string((int)props.updates)+"_"+props.modelcount+"_messageFreq.tsv";
         outV.open(filenameV);
         outF.open(filenameF);
         nonConvVar.open(filenameNC);
