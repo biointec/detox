@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -62,12 +62,22 @@ public:
         }
 
         /**
-         * Reverse complement this node-position pair
+         * Get the reverse complement of this node-position pair
          * @param nodeLength Length of the node ("marginal length" for k-mers,
          * "normal length" for actual positions)
          */
         NodePosPair getRevCompl(size_t nodeLength) const {
                 return NodePosPair(-first, nodeLength - second - 1);
+        }
+
+        /**
+         * Reverse complement this node-position pair
+         * @param nodeLength Length of the node ("marginal length" for k-mers,
+         * "normal length" for actual positions)
+         */
+        void revCompl(size_t nodeLength) {
+                first = -first;
+                second = nodeLength - second - 1;
         }
 
         /**
@@ -139,6 +149,10 @@ public:
          */
         void clear() {
                 table.clear();
+        }
+
+        size_t size() const {
+                return table.size();
         }
 
         /**

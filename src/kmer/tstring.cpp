@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -28,7 +28,7 @@ const uint8_t TString::nucleotideMask = 3;
 
 using namespace std;
 
-TString::TString(string str) : length(0), buf(NULL)
+TString::TString(const string& str) : length(0), buf(NULL)
 {
         setSequence(str);
 }
@@ -100,18 +100,18 @@ string TString::getSequence() const
         return oss.str();
 }
 
-string TString::substr(size_t offset, size_t len) const
+string TString::substr(size_t pos, size_t len) const
 {
-        if (offset >= length)
+        if (pos >= length)
                 return string();
 
-        len = min(len, length - offset);
+        len = min(len, length - pos);
         string result;
         result.reserve(len);
 
-        size_t byteID = offset / 4, byteOff = 2 * (offset % 4);
+        size_t byteID = pos / 4, byteOff = 2 * (pos % 4);
 
-        for (size_t i = offset; i < offset + len; i++) {
+        for (size_t i = pos; i < pos + len; i++) {
                 result.push_back(Nucleotide::nucleotideToChar(buf[byteID] >> byteOff));
 
                 byteOff += 2;

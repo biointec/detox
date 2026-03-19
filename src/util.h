@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -28,12 +28,73 @@
 #include <cmath>
 #include <mutex>
 #include <cassert>
+#include <array>
 
 // ============================================================================
 // DEFINITIONS
 // ============================================================================
 
 #define MAX_TIMERS 16
+
+// ============================================================================
+// ONLINE COMPUTATION OF MEAN AND STD DEV
+// ============================================================================
+
+class MeanStd
+{
+private:
+        size_t N;       // number of observations
+        double sum;     // sum of observations
+        double ss;      // sum of squares of observations
+
+public:
+        /**
+         * @brief Default constructor
+         */
+        MeanStd() : N(0), sum(0.0), ss(0.0) {}
+
+        /**
+         * @brief Add a single observation
+         * @param obsVal Observed value
+         */
+        void addObservation(double obsVal) {
+                N++;
+                sum += obsVal;
+                ss += obsVal * obsVal;
+        }
+
+        /**
+         * Get the number of observations
+         * @return The number of observations
+         */
+        size_t getNumObs() const {
+                return N;
+        }
+
+        /**
+         * @brief Get the estimated mean
+         * @param value Estimated mean
+         */
+        double getMean() const {
+                return (N > 0) ? sum / double(N) : 0.0;
+        }
+
+        /**
+         * @brief Get the estimated variance
+         * @param value Estimated variance
+         */
+        double getVar() const {
+                return (N > 1) ? (ss - sum * getMean()) / double(N-1) : 0.0;
+        }
+
+        /**
+         * @brief Get the estimated standard deviation
+         * @param value Estimated standard deviation
+         */
+        double getStd() const {
+                return std::sqrt(getVar());
+        }
+};
 
 // ============================================================================
 // WORK LOAD BALANCER
@@ -234,8 +295,7 @@ public:
          * @param mu Average
          * @return The probability p(k)
          */
-       	static double logPoissonPDF(unsigned int k, double mu);
-        static double logPoissonPDF(double k, double mu);
+        static double logPoissonPDF(unsigned int k, double mu);
 
         /**
          * Compute the probability ratio p(k, mu1) / p(k, mu2)
@@ -264,6 +324,7 @@ public:
          */
         static double logNegbinomialPDF(unsigned int k, double mu, double var);
         static double logNegbinomialPDF(double k, double mu, double var);
+        static double logNegbinomialPDF_HT(double k, double mu, double var);
 
         /**
          * Compute the probability ratio p(k, mu1) / p(k, mu2)

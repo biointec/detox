@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2023 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -33,8 +33,6 @@
 class DSNode {
 
 private:
-        static Arc* arcs;
-
         typedef union {
                 struct Packed {
                         uint8_t numLeft:3;              // [0...4]
@@ -46,8 +44,8 @@ private:
         } Bitfield;
 
         TString sequence;       // DNA sequence
-        ArcID leftID;           // ID of the first left arc or merged node
-        ArcID rightID;          // ID of the first right arc or merged node
+        Arc* lArc;              // Pointer to the first left arc
+        Arc* rArc;              // Pointer to the first right arc
         Bitfield arcInfo;       // number of arcs at each node
 
         std::atomic<Coverage> cov;
@@ -56,17 +54,9 @@ private:
 
 public:
         /**
-         * Set the static arc pointer
-         * @param arcPtr The static arc pointer
-         */
-        static void setArcsPointer(Arc *arcPtr) {
-                arcs = arcPtr;
-        }
-
-        /**
          * Default constructor
          */
-        DSNode() : leftID(0), rightID(0), cov(0), myFlag1(false), myFlag2(false)
+        DSNode() : lArc(NULL), rArc(NULL), cov(0), myFlag1(false), myFlag2(false)
         {
                 arcInfo.up = 0;
         }
@@ -78,21 +68,53 @@ public:
 
                 // copy/move all members
                 sequence = std::move(rhs.sequence);
-                leftID = rhs.leftID;
-                rightID = rhs.rightID;
+                lArc = rhs.lArc;
+                rArc = rhs.rArc;
                 arcInfo = rhs.arcInfo;
                 cov = rhs.cov.load();
                 myFlag1 = rhs.myFlag1.load();
                 myFlag2 = rhs.myFlag2.load();
 
                 // load rhs in an empty state
-                rhs.leftID = rhs.rightID = 0;
+                rhs.lArc = rhs.rArc = NULL;
                 rhs.arcInfo.up = 0;
                 rhs.cov = 0;
                 rhs.myFlag1 = false;
                 rhs.myFlag2 = false;
 
                 return *this;
+        }
+
+        /**
+         * Get the pointer to the left right arc
+         * @return The pointer to the left right arc
+         */
+        Arc* getFirstLeftArc() const {
+                return lArc;
+        }
+
+        /**
+         * Get the pointer to the first right arc
+         * @return The pointer to the first right arc
+         */
+        Arc* getFirstRightArc() const {
+                return rArc;
+        }
+
+        /**
+         * Set the pointer to the left right arc
+         * @param target The pointer to the left right arc
+         */
+        void setFirstLeftArc(Arc* target) {
+                lArc = target;
+        }
+
+        /**
+         * Set the pointer to the first right arc
+         * @param target The pointer to the first right arc
+         */
+        void setFirstRightArc(Arc* target) {
+                rArc = target;
         }
 
         /**
@@ -152,46 +174,20 @@ public:
                 return myFlag2;
         }
 
-        void swapRightArcsSign() {
+        /**
+         * Swap the sign of the right arcs
+         */
+        void swapSignRightArcs() {
                 for (int i = 0; i < arcInfo.p.numRight; i++)
-                        arcs[rightID + i].setNodeID(-arcs[rightID + i].getNodeID());
+                        rArc[i].setNodeID(-rArc[i].getNodeID());
         }
 
-        void swapLeftArcsSign() {
+        /**
+         * Swap the sign of the left arcs
+         */
+        void swapSignLeftArcs() {
                 for (int i = 0; i < arcInfo.p.numLeft; i++)
-                        arcs[leftID + i].setNodeID(-arcs[leftID + i].getNodeID());
-        }
-
-        /**
-         * Get the identifier for the first left arc
-         * @return The identifier for the first left arc
-         */
-        ArcID getFirstLeftArcID() const {
-                return leftID;
-        }
-
-        /**
-         * Get the identifier for the first right arc
-         * @return The identifier for the first right arc
-         */
-        ArcID getFirstRightArcID() const {
-                return rightID;
-        }
-
-        /**
-         * Set the identifier for the first left arc
-         * @param The identifier for the first left arc
-         */
-        void setFirstLeftArcID(ArcID target) {
-                leftID = target;
-        }
-
-        /**
-         * Get the identifier for the first right arc
-         * @param The identifier for the first right arc
-         */
-        void setFirstRightArcID(ArcID target) {
-                rightID = target;
+                        lArc[i].setNodeID(-lArc[i].getNodeID());
         }
 
         /**
@@ -214,7 +210,7 @@ public:
          * Get the length of the node (# nucleotides in DNA string)
          * @return The length of the node
          */
-        size_t getLength() const {
+        NodeLength getLength() const {
                 return sequence.getLength();
         }
 
@@ -223,30 +219,31 @@ public:
          * @return The marginal length of the node
          */
         NodeLength getMarginalLength() const {
-                return getLength() - Kmer::getK() + 1;
+                size_t l = getLength();
+                return (l >= Kmer::getK()) ? l - Kmer::getK() + 1 : 0;
         }
 
         /**
          * Set the number of left arcs
          * @param numLeft The number of left arcs
          */
-        void setNumLeftArcs(uint8_t numLeft) {
-                arcInfo.p.numLeft = numLeft;
+        void setNumLeftArcs(int numLeft) {
+                arcInfo.p.numLeft = (uint8_t)numLeft;
         }
 
         /**
          * Set the number of right arcs
          * @param numright The number of right arcs
          */
-        void setNumRightArcs(uint8_t numRight) {
-                arcInfo.p.numRight = numRight;
+        void setNumRightArcs(int numRight) {
+                arcInfo.p.numRight = (uint8_t)numRight;
         }
 
         /**
          * Get the number of left arcs
          * @return The number of left arcs
          */
-        uint8_t numLeftArcs() const {
+        int numLeftArcs() const {
                 return arcInfo.p.numLeft;
         }
 
@@ -254,7 +251,7 @@ public:
          * Get the number of right arcs
          * @return The number of right arcs
          */
-        uint8_t numRightArcs() const {
+        int numRightArcs() const {
                 return arcInfo.p.numRight;
         }
 
@@ -263,7 +260,7 @@ public:
          */
         void deleteLeftArcs() {
                 for (int i = 0; i < arcInfo.p.numLeft; i++)
-                        arcs[leftID + i].deleteArc();
+                        lArc[i].deleteArc();
                 arcInfo.p.numLeft = 0;
         }
 
@@ -272,7 +269,7 @@ public:
          */
         void deleteRightArcs() {
                 for (int i = 0; i < arcInfo.p.numRight; i++)
-                        arcs[rightID + i].deleteArc();
+                        rArc[i].deleteArc();
                 arcInfo.p.numRight = 0;
         }
 
@@ -283,8 +280,8 @@ public:
          */
         Arc* leftArc(NodeID nodeID) {
                 for (int i = 0; i < arcInfo.p.numLeft; i++)
-                        if (arcs[leftID + i].getNodeID() == nodeID)
-                                return arcs + leftID + i;
+                        if (lArc[i].getNodeID() == nodeID)
+                                return lArc + i;
                 return NULL;
         }
 
@@ -295,8 +292,8 @@ public:
          */
         Arc* rightArc(NodeID nodeID) {
                 for (int i = 0; i < arcInfo.p.numRight; i++)
-                        if (arcs[rightID + i].getNodeID() == nodeID)
-                                return arcs + rightID + i;
+                        if (rArc[i].getNodeID() == nodeID)
+                                return rArc + i;
                 return NULL;
         }
 
@@ -320,7 +317,7 @@ public:
          * @return An iterator pointing to the first left arc
          */
         ArcIt leftBegin(bool reversed = false) const {
-                return ArcIt(arcs + leftID, reversed);
+                return ArcIt(lArc, reversed);
         }
 
         /**
@@ -329,7 +326,7 @@ public:
          * @return An iterator pointing to the last left arc
          */
         ArcIt leftEnd(bool reversed = false) const {
-                return ArcIt(arcs + leftID + arcInfo.p.numLeft, reversed);
+                return ArcIt(lArc + arcInfo.p.numLeft, reversed);
         }
 
         /**
@@ -338,7 +335,7 @@ public:
          * @return An iterator pointing to the first left arc
          */
         ArcIt rightBegin(bool reversed = false) const {
-                return ArcIt(arcs + rightID, reversed);
+                return ArcIt(rArc, reversed);
         }
 
         /**
@@ -347,7 +344,7 @@ public:
          * @return An iterator pointing to the last right arc
          */
         ArcIt rightEnd(bool reversed = false) const {
-                return ArcIt(arcs + rightID + arcInfo.p.numRight, reversed);
+                return ArcIt(rArc + arcInfo.p.numRight, reversed);
         }
 
         /**
@@ -368,12 +365,13 @@ public:
 
         /**
          * Get a subsequence of this node
-         * @param offset Start offset
-         * @param len Length of node
+         * @param pos Position of the first character to include
+         * @param len Length of the subsequence
          * @return stl string containing the sequence
          */
-        std::string substr(size_t offset, size_t len) const {
-                return sequence.substr(offset, len);
+        std::string substr(size_t pos = 0,
+                           size_t len = std::string::npos) const {
+                return sequence.substr(pos, len);
         }
 
         /**
@@ -448,9 +446,11 @@ public:
          * Write a node to file
          * @param ofs Open output file stream
          */
-        void write(std::ofstream& ofs) const {
+        void write(std::ofstream& ofs, Arc* arcBase) const {
                 ofs.write((char*)&cov,sizeof(cov));
+                ArcID leftID = lArc - arcBase;
                 ofs.write((char*)&leftID, sizeof(leftID));
+                ArcID rightID = rArc - arcBase;
                 ofs.write((char*)&rightID, sizeof(rightID));
                 ofs.write((char*)&arcInfo, sizeof(arcInfo));
                 sequence.write(ofs);
@@ -460,13 +460,30 @@ public:
          * Load a node from file
          * @param ifs Open input file stream
          */
-        void read(std::ifstream& ifs) {
+        void read(std::ifstream& ifs, Arc* arcBase) {
                 ifs.read((char*)&cov, sizeof(cov));
+                ArcID leftID, rightID;
                 ifs.read((char*)&leftID, sizeof(leftID));
+                lArc = arcBase + leftID;
                 ifs.read((char*)&rightID, sizeof(rightID));
+                rArc = arcBase + rightID;
                 ifs.read((char*)&arcInfo, sizeof(arcInfo));
                 sequence.read(ifs);
         }
 };
+
+// ============================================================================
+// HIGHER-ORDER NODE IDENTIFIER
+// ============================================================================
+
+typedef std::vector<NodeID> HoNodeID;
+std::ostream& operator<<(std::ostream& out, const HoNodeID &id);
+
+// ============================================================================
+// HIGHER-ORDER EDGE IDENTIFIER
+// ============================================================================
+
+typedef std::pair<HoNodeID, HoNodeID> HoEdgeID;
+std::ostream& operator<<(std::ostream& out, const HoEdgeID &id);
 
 #endif

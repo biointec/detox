@@ -1,7 +1,4 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
- *   This file is part of Detox    
- * 
  *  This program is free software: you can redistribute it and/or modify      *
  *  it under the terms of the GNU Affero General Public License as            *
  *  published by the Free Software Foundation, either version 3 of the        *
@@ -36,28 +33,28 @@ bool FastARecord::readFromFile(SeqFile& inputFile)
                 return false;
         if (c != '>')
                 throw ios::failure("File doesn't appear to be in FastA format");
-        inputFile.getLine(seqID);
-        if (!seqID.empty() && seqID.back() == '\n')
-                seqID.pop_back();
+        inputFile.getLine(first);
+        if (!first.empty() && first.back() == '\n')
+                first.pop_back();
 
         // read the actual read
-        read.clear();
+        second.clear();
         while (inputFile.good() && inputFile.peekCharacter() != '>') {
                 string line;
                 inputFile.getLine(line);
                 if (!line.empty() && line.back() == '\n')
                         line.pop_back();
-                read.append(line);
+                second.append(line);
         }
 
-        return !read.empty();
+        return !second.empty();
 }
 
 void FastARecord::writeToFile(SeqFile& inputFile) const
 {
-        inputFile.writeLine(seqID);
+        inputFile.writeLine(first);
         inputFile.writeChar('\n');
-        inputFile.writeLine(read);
+        inputFile.writeLine(second);
         inputFile.writeLine("\n");
 }
 

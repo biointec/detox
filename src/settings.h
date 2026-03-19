@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2026 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -32,17 +32,15 @@ class Settings {
 
 private:
         // input file arguments
-        std::string graphFilename;
         std::string readFilename;
 
         // options
         bool useQualFlag;       // use per-base quality scores (q-mers)
-        
-        bool approxInfFlag;          // use loopy belief propagation (from libdai) on full graph
-        bool mapAssignment;      // Compute the MAP assignment of multiplicities in the graph (probably only useful when using approximate inference)
-        bool singleCRF;          // Use one CRF that contains all disconnected components of the de Bruijn graph (not advised, only for testing purposes!)
 
+        size_t k;               // k-mer length
         int numThreads;         // number of threads
+
+        std::string nnModel;    // path to neural network for mult. inference
 
         int abundanceMin;       // min abundance threshold as passed to BCALM 2
 
@@ -60,8 +58,10 @@ private:
         double emConvEps;       // EM convergence tolerance (epsilon)
         double emTrainSize;     // EM number of nodes/arcs to train the model
 
+        float MCD;              // maximum conflict degree
+        int minCount;           // Minimum count for paired-end reads
+
         int phredBase;          // ASCII value corresponding to Phred score Q=0
-        int visGraphNode;       // Node around which neighbourhood to visualise is centered
 
         /**
          * Print usage to stdout
@@ -82,19 +82,19 @@ public:
         Settings(int argc, char** argv);
 
         /**
-         * Get the graph filename
-         * @return The graph filename
-         */
-        const std::string& getGraphFilename() const {
-                return graphFilename;
-        }
-
-        /**
          * Get the graph filename produced in stage 1
          * @return The graph filename
          */
         std::string getStage1GraphFilename() const {
-                return graphFilename + ".st1";
+                return "dbgraph";
+        }
+
+        /**
+         * Get the graph filename produced in stage 3
+         * @return The graph filename
+         */
+        std::string getStage2GraphFilename() const {
+                return "dbgraph.bin.st2";
         }
 
         /**
@@ -102,7 +102,7 @@ public:
          * @return The graph filename
          */
         std::string getStage3GraphFilename() const {
-                return graphFilename + ".st3";
+                return "dbgraph.bin.st3";
         }
 
         /**
@@ -110,25 +110,39 @@ public:
          * @return The graph filename
          */
         std::string getStage4GraphFilename() const {
-                return graphFilename + ".st4";
+                return "dbgraph.bin.st4";
         }
 
         /**
          * Get the node model filename produced in stage 2
          * @return The graph filename
          */
-        std::string getNodeModelFilename(bool cleaned=false) const {
-                std::string append = (cleaned) ? ".st3" : ".st2";
-                return "model.node" + append;
+        std::string getStage2NodeModelFilename() const {
+                return "model.node.st2";
         }
 
         /**
          * Get the edge model filename produced in stage 2
          * @return The graph filename
          */
-        std::string getEdgeModelFilename(bool cleaned=false) const {
-                std::string append = (cleaned) ? ".st3" : ".st2";
-                return "model.edge" + append;
+        std::string getStage2EdgeModelFilename() const {
+                return "model.edge.st2";
+        }
+
+        /**
+         * Get the node model filename produced in stage 3
+         * @return The graph filename
+         */
+        std::string getStage3NodeModelFilename() const {
+                return "model.node.st3";
+        }
+
+        /**
+         * Get the edge model filename produced in stage 3
+         * @return The graph filename
+         */
+        std::string getStage3EdgeModelFilename() const {
+                return "model.edge.st3";
         }
 
         /**
@@ -194,31 +208,6 @@ public:
         bool useQual() const {
                 return useQualFlag;
         }
-        
-        /**
-         * Should approximate inference be used when computing all multiplicities?
-         * @return true if using approximate inference
-         */
-        bool approxInf() const {
-                return approxInfFlag;
-        }
-        
-        /**
-         * Use MAP assignments when computing multiplicities with approximate inference
-         * @return true for MAP, false otherwise
-         */ 
-        bool computeMAP() const {
-                return mapAssignment;
-        }
-        
-        /**
-         * Create one CRF that possibly contains multiple disconnected components
-         * of the de Bruijn graph (not advised, only used for testing purposes)
-         * @return true for one CRF, false for one CRF per connected components
-         */
-        bool useSingleCRF() const {
-                return singleCRF;
-        }
 
         /**
          * Get the number of threads
@@ -226,6 +215,14 @@ public:
          */
         int getNumThreads() const {
                 return numThreads;
+        }
+
+        /**
+         * @brief Get the neural network model filename
+         * @return Model filename
+         */
+        std::string getNNModelFilename() const {
+                return nnModel;
         }
 
         /**
@@ -359,14 +356,21 @@ public:
         int getPhredBase() const {
                 return phredBase;
         }
-        
+
         /**
-         * Get central node around which a neighbourhood should be visualised
-         * No visualisation if value == 0
-         * @return nodeID of central node
+         * @brief Get the maximum conflict degree
+         * @return The maximum conflict degree
          */
-        int getVisGraphNode() const {
-                return visGraphNode;
+        float getMCD() const {
+                return MCD;
+        }
+
+        /**
+         * @brief Get the minimum count (used to filter paired-end reads)
+         * @return The minimum count
+         */
+        int getMinCount() const {
+                return minCount;
         }
 
         /**
@@ -374,7 +378,9 @@ public:
          * @return true or false
          */
         bool stageOneNecessary() const {
-                return !Util::fileExists(getStage1GraphFilename());
+                return (!Util::fileExists("dbgraph.node.st1") ||
+                        !Util::fileExists("dbgraph.edge.st1") ||
+                        !Util::fileExists("dbgraph.meta.st1"));
         }
 
         /**
@@ -382,18 +388,8 @@ public:
          * @return true or false
          */
         bool stageTwoNecessary() const {
-                return !(Util::fileExists(getNodeModelFilename()) &&
-                         Util::fileExists(getEdgeModelFilename()));
-        }
-        
-        /**
-         * Check if necessary to execute stage 3
-         * @return true or false
-         */
-        bool stageThreeNecessary() const {
-                return (!Util::fileExists(getStage3GraphFilename()) || 
-                        !Util::fileExists(getNodeModelFilename(true)) || 
-                        !Util::fileExists(getEdgeModelFilename(true)));
+                return !(Util::fileExists(getStage2NodeModelFilename()) &&
+                         Util::fileExists(getStage2EdgeModelFilename()));
         }
 };
 

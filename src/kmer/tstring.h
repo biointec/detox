@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -162,7 +162,7 @@ public:
          * Constructor from an stl string
          * @param str String containing only 'A', 'C', 'G' and 'T'
          */
-        TString(std::string str);
+        TString(const std::string& str);
 
         /**
          * Destructor
@@ -215,12 +215,13 @@ public:
         std::string getSequence() const;
 
         /**
-         * Get a subsequence of this node
-         * @param offset Start offset
-         * @param len Length of node
+         * Get a subsequence
+         * @param pos Position of the first character to include
+         * @param len Length of the subsequence
          * @return stl string containing the sequence
          */
-        std::string substr(size_t offset, size_t len) const;
+        std::string substr(size_t pos = 0,
+                           size_t len = std::string::npos) const;
 
         /**
          * Complement the tight string

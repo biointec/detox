@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -180,11 +180,6 @@ double Util::logPoissonPDF(unsigned int k, double mu)
         return k*log(mu)-mu-lgamma(k+1);
 }
 
-double Util::logPoissonPDF(double k, double mu)
-{
-        return k*log(mu)-mu-lgamma(k+1);
-}
-
 double Util::poissonPDFratio(unsigned int k, double mu1, double mu2)
 {
         return exp(k*log(mu1) - mu1 - k*log(mu2) + mu2);
@@ -194,7 +189,7 @@ double Util::negbinomialPDF(unsigned int k, double mu, double sigma2)
 {
         // make sure that sigma2 is bigger than mu
         if ((sigma2 - mu) < 1e-3)
-                return poissonPDF(k,mu);
+                sigma2 = mu + 1e-3;
 
         double p = (sigma2 - mu)/sigma2;
         double r = mu*mu/(sigma2 - mu);
@@ -205,7 +200,7 @@ double Util::logNegbinomialPDF(unsigned int k, double mu, double sigma2)
 {
         // make sure that sigma2 is bigger than mu
         if ((sigma2 - mu) < 1e-3)
-                return logPoissonPDF(k,mu);
+                sigma2 = mu + 1e-3;
 
         double p = (sigma2 - mu)/sigma2;
         double r = mu*mu/(sigma2 - mu);
@@ -216,11 +211,30 @@ double Util::logNegbinomialPDF(double k, double mu, double sigma2)
 {
         // make sure that sigma2 is bigger than mu
         if ((sigma2 - mu) < 1e-3)
-                return logPoissonPDF(k,mu);
+                sigma2 = mu + 1e-3;
 
         double p = (sigma2 - mu)/sigma2;
         double r = mu*mu/(sigma2 - mu);
         return lgamma(k + r) - lgamma(k+1) - lgamma(r) + r*log(1-p) + k*log(p);
+}
+
+double Util::logNegbinomialPDF_HT(double k, double mu, double sigma2)
+{
+        // make sure that sigma2 is bigger than mu
+        if ((sigma2 - mu) < 1e-3)
+                sigma2 = mu + 1e-3;
+
+        double p = (sigma2 - mu)/sigma2;
+        double r = mu*mu/(sigma2 - mu);
+        double NB = exp(lgamma(k + r) - lgamma(k+1) - lgamma(r) + r*log(1-p) + k*log(p));
+
+        double H1 = min(1e-2, 0.1*exp(lgamma(mu + r) - lgamma(mu+1) - lgamma(r) + r*log(1-p) + mu*log(p)));      // FIXME: this is a constant
+        double H2 = min(1e-5, 0.5 * H1);
+
+        double a = (H1-H2)/mu, b = H2;
+        double HT = a*k + b;
+
+        return ((NB < HT) && (k < mu)) ? log(HT) : log(NB);
 }
 
 double Util::negbinomialPDFratio(unsigned int k, double mu1, double sigma21,
@@ -289,6 +303,7 @@ int Util::fitTruncNegBinomEM(map<unsigned int, double>& data,
                 }
 
                 mu = max(DOUBLE_SMALL, mu / w); // handle mu = 0.0
+                mu = min(mu, 1.0);
 
                 // compute variance
                 double sum = 0.0;
@@ -299,7 +314,7 @@ int Util::fitTruncNegBinomEM(map<unsigned int, double>& data,
                         sum += y * (x-mu) * (x-mu);
                 }
 
-                ODF = sum / w / mu;
+                ODF = min(sum / w / mu, 50.0);
 
                 // make sure the variance is at least the average
                 // (overdispersed Poisson model)

@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -21,6 +21,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <algorithm>
 #include "util.h"
 
 // ============================================================================
@@ -221,10 +222,6 @@ public:
                 for (auto& it : logw)
                         it = log(w);
         }
-        
-        void setZeroWeight(double w) {
-                logw[0] = log(w);
-        }
 
         /**
          * Get the number of components in the model
@@ -308,6 +305,24 @@ public:
                 } while (right - left > epsilon);
 
                 return 0.5 * (right + left);
+        }
+
+        /**
+         * Partition the range [0, maxCov] into num equal-weight parts
+         * @param maxCov The maximum coverage
+         */
+        std::vector<double> getFractions(double maxCov)
+        {
+                std::vector<double> res(1, maxCov);
+
+                double cov = maxCov;
+                while (cov > 1.0) {
+                        cov /= 2.0;
+                        res.push_back(cov);
+                }
+
+                std::reverse(res.begin(), res.end());
+                return res;
         }
 };
 

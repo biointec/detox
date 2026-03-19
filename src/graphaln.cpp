@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -356,39 +356,37 @@ void GraphAligner::findShortestPathToNPP(const NodePosPair& dstEnd,
                                          vector<NodeID>& modNodes)
 {
         // we perform a Dijkstra walk to the left
-        priority_queue<NodeDFS, vector<NodeDFS>, NodeDFSComp> heap;
-        heap.push(NodeDFS(dstEnd.getNodeID(), dstEnd.getPosition()) );
+        priority_queue<NodeDepth, vector<NodeDepth>, NodeDepthComp> heap;
+        heap.push(NodeDepth(dstEnd.getNodeID(), dstEnd.getPosition()) );
 
         while( !heap.empty() ) {
                 // get the top node
-                NodeDFS currTop = heap.top();
+                auto [currID, currDepth] = heap.top();
                 heap.pop();
-
-                const NodeID& currID = currTop.nodeID;
 
                 // if node was visited before, get out: this is possible because
                 // we don't update distances in the PQ but rather insert doubles
                 // Note: the first visit to a node always represents the
                 // shortest path from the source node to that node
-                if (currTop.depth >= lenToDst[currID])
+                if (currDepth >= lenToDst[currID])
                         continue;
 
-                lenToDst[currID] = currTop.depth;
+                lenToDst[currID] = currDepth;
                 modNodes.push_back(currID);
 
                 // if no left-overlapping nodes can reach dstEnd within maxLen
-                if (currTop.depth >= maxLen + Kmer::getK() - 1)
+                if (currDepth >= maxLen + Kmer::getK() - 1)
                         continue;
 
                 // add the left neighbors of the current node to the PQ
                 SSNode curr = dBG.getSSNode(currID);
                 for (ArcIt it = curr.leftBegin(); it != curr.leftEnd(); it++) {
                         SSNode left = dBG.getSSNode(it->getNodeID());
-                        size_t leftLength = currTop.depth + left.getMarginalLength();
+                        size_t leftLength = currDepth + left.getMarginalLength();
 
                         // if left was not visited before
                         if (leftLength < lenToDst[it->getNodeID()])
-                                heap.push(NodeDFS(it->getNodeID(), leftLength) );
+                                heap.push(NodeDepth(it->getNodeID(), leftLength) );
                 }
         }
 

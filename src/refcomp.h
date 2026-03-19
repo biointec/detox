@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -22,10 +22,12 @@
 #include "global.h"
 #include "kmernpp.h"
 #include "ssnode.h"
+#include "readfile/fasta.h"
 
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <deque>
 
 // ============================================================================
 // CLASS PROTOTYPES
@@ -66,6 +68,8 @@ public:
         size_t seqEnd;          // end position in the subsequence
         NodeID dstNodeID;       // node ID of the last node
         size_t dstNodeEnd;      // end position in the last node
+
+        std::deque<NodeID> nc;  // node chain
 
         /**
          * Default constructor
@@ -124,6 +128,14 @@ public:
         }
 
         /**
+         * Add a node to the node chain
+         * @param id Node identifier
+         */
+        void addNode(NodeID id) {
+                nc.push_back(id);
+        }
+
+        /**
          * Operator << overloading
          * @param out Output stream
          * @param s Segment to display
@@ -142,7 +154,7 @@ private:
         const DBGraph& dBG;                     // const-reference to dBG
         const Settings& settings;               // const-reference to settings
         const KmerNPPTable& table;              // <kmer, NodePosPair> table
-        std::vector<std::string> sequence;      // reference sequences
+        std::vector<FastARecord> records;       // reference sequences
 
         /**
          * Read a fasta file from disk and store the sequences
@@ -239,12 +251,45 @@ public:
          */
         void writeAlignedSeqs(const std::string& filename);
 
+        /**
+         * Write graph reductions to disk
+         * @param red Reductions (output)
+         */
+        void getReductions(std::vector<NodeChain>& red);
 
         /**
          * Get the true node chains from the reference sequence
+         * @param contID Contig identifier (output)
          * @param nodeChain Node chains (output)
          */
-        void getTrueNodeChain(std::vector<NodeChain>& nodeChain);
+        void getTrueNodeChain(std::vector<std::string>& contID,
+                              std::vector<NodeChain>& nodeChain);
+
+        /**
+         * Get the true node chains for part of the reference sequence
+         * @param seqID Sequence identifier [0..records.size()[
+         * @param b Begin position
+         * @param e End position
+         * @return Node chain of interest
+         */
+        NodeChain getNodeChain(int seqID, size_t b, size_t e);
+
+        /**
+         * Print part of the sequence
+         * @param seqID Sequence identifier [0..records.size()[
+         * @param b Begin position
+         * @param e End position
+         * @return Node chain of interest
+         */
+        void printSequence(int seqID, size_t b, size_t e);
+
+        /**
+         * Get the true node chains that starts at startID
+         * @param startID start node
+         * @param len length of the node chain (in number of nodes)
+         * @return Node chain of interest
+         */
+        NodeChain getNodeChain(NodeID start, size_t len);
 
         /**
          * Calculate the true node multiplicity
@@ -252,6 +297,16 @@ public:
          * @param edgeMult Edge multiplicity vector (output)
          */
         void getTrueMultiplicity(NodeMap<int>& nodeMult,
+                                 EdgeMap<int>& edgeMult);
+
+        /**
+         * Calculate the true node multiplicity
+         * @param aln Aligned sequences
+         * @param nodeMult Node multiplicity vector (output)
+         * @param edgeMult Edge multiplicity vector (output)
+         */
+        void getTrueMultiplicity(std::vector<std::vector<AlnSegment> >& aln,
+                                 NodeMap<int>& nodeMult,
                                  EdgeMap<int>& edgeMult);
 };
 
