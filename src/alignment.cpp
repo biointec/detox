@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -17,6 +17,7 @@
  ******************************************************************************/
 
 #include "alignment.h"
+#include "nodechain.h"
 
 #include <stdlib.h>
 #include <stdexcept>
@@ -80,7 +81,8 @@ int NWAligner::S(char a, char b) const
         return I;
 }
 
-AlnRes NWAligner::alnGlobFreeEndGap(const string& s1, const string& s2)
+AlnRes NWAligner::alnGlobFreeEndGap(const std::string& s1,
+                                    const std::string& s2)
 {
         NWAligner& F = *this;   // shorthand notation
 
@@ -216,9 +218,103 @@ int NWAligner::alignBanded(const string& s1, const string& s2)
 AlnRes2 NWAligner::alignBandedContd(const string& X, const string& Y, int offsetY)
 {
         NWAligner& F = *this;   // shorthand notation
+        const int sizeX = X.size(), sizeY = Y.size();
 
         // last row of the matrix that will be computed
-        int iLast = min(offsetY + Y.size(), X.size() + maxIndel);
+        int iLast = min(offsetY + sizeY, sizeX + maxIndel);
+
+        // initialize the rest of the bulk of the matrix
+        for (int i = offsetY + 1; i <= iLast; i++) {
+                int jBegin = max(1, i - maxIndel);
+                int jLast = min<int>(sizeX, i + maxIndel);
+
+                for (int j = jBegin; j <= jLast; j++) {
+                        int diag = F(i-1, j-1) + S(Y[i-1-offsetY], X[j-1]);
+                        int up   = (j < i + maxIndel) ? F(i-1, j) + G : diag;
+                        int left = (j > i - maxIndel) ? F(i, j-1) + G : diag;
+
+                        F(i, j) = max(diag, max(up, left));
+                }
+        }
+
+        // find the maximum (attainable) score and its position
+        int score  = numeric_limits<int>::min();
+        int maxAtt = numeric_limits<int>::min();
+        int maxCol = 0, maxRow = 0;
+
+        // A) Partial alignment: at row (iLast, :)
+        int jBegin = max<int>(0, iLast - maxIndel);
+        int jMid   = min<int>(sizeX, iLast);
+        int jLast  = min<int>(sizeX, iLast + maxIndel);
+        for (int j = jBegin; j <= jMid; j++) {
+                if (score <= F(iLast, j) + G*(sizeX-j)) {
+                        score = F(iLast, j) + G*(sizeX-j);
+                        maxRow = iLast;
+                        maxCol = j;
+                }
+                maxAtt = max<int>(maxAtt, F(iLast, j) + M*(sizeX-j));
+        }
+        for (int j = jMid + 1; j <= jLast; j++) {
+                if (score < F(iLast, j) + G*(sizeX-j)) {
+                        score = F(iLast, j) + G*(sizeX-j);
+                        maxRow = iLast;
+                        maxCol = j;
+                }
+                maxAtt = max<int>(maxAtt, F(iLast, j) + M*(sizeX-j));
+        }
+
+        // B) X fully aligned: at column (:, X.size())
+        // NOTE: iB has to be at least offsetY + 1; in other words, only
+        // alignments that include at least one character of Y are reported!
+        int iB = max<int>(sizeX - maxIndel, offsetY + 1);
+        for (int i = iB; i <= iLast; i++) {
+                if (score <= F(i, sizeX)) {
+                        score = F(i, sizeX);
+                        maxRow = i;
+                        maxCol = sizeX;
+                }
+        }
+
+        /*cout << "Full alignment score: " << score
+             << ", at coordinates (" << sRow << ", " << X.size() << ")\n";
+        cout << "Partial score: " << partScore
+             << ", at coordinates (" << iLast << ", " << sCol << ")\n";
+        cout << "Attainable score: " << maxAtt << endl;*/
+
+        // print the alignment matrix
+        /*cout << "\t";
+        for (int i = 0; i < X.size(); i++)
+                cout << "\t" << X[i];
+        cout << "\n";
+
+        for (int i = 0; i <= iLast; i++) {
+                int jBegin = max(0, i - maxIndel);
+                int jEnd = min<int>(X.size() + 1, i + maxIndel + 1);
+
+                if (i >= offsetY + 1)
+                        cout << Y[i-1-offsetY];
+                cout << "\t";
+
+                for (int i = 0; i < jBegin; i++)
+                        cout << "\t";
+                for (int j = jBegin; j < jEnd; j++)
+                        cout << F(i, j) << "\t";
+                cout << "\n";
+        }*/
+
+        return AlnRes2(maxCol, maxRow, score, maxAtt);
+}
+
+AlnRes2 NWAligner::alignBandedContdFullY(const string& X, const string& Y, int offsetY)
+{
+        NWAligner& F = *this;   // shorthand notation
+        const int iMin = numeric_limits<int>::min();
+
+        // last row of the matrix that will be computed
+        int iLast = offsetY + Y.size();
+        // impossible to include Y in alignment (Y is too long)
+        if (iLast > X.size() + maxIndel)
+                return AlnRes2(0, 0, iMin, iMin);
 
         // initialize the rest of the bulk of the matrix
         for (int i = offsetY + 1; i <= iLast; i++) {
@@ -235,7 +331,7 @@ AlnRes2 NWAligner::alignBandedContd(const string& X, const string& Y, int offset
         }
 
         // get the aln score (X fully aligned) at position (sRow, X.size())
-        int score = numeric_limits<int>::min(), sRow = 0;
+        int score = iMin, sRow = 0;
 
         int iB = max<int>(X.size() - maxIndel, offsetY + 1);
         for (int i = iB; i <= iLast; i++) {
@@ -247,7 +343,7 @@ AlnRes2 NWAligner::alignBandedContd(const string& X, const string& Y, int offset
 
         // get the partial aln score at position (iLast, sCol) + max. attainable
         int partScore = numeric_limits<int>::min(), sCol = 0;
-        int maxAtt = numeric_limits<int>::min();
+        int maxAtt = score;
 
         int jBegin = max(1, iLast - maxIndel);
         int jLast = min<int>(X.size(), iLast + maxIndel);
@@ -465,4 +561,80 @@ AlnRes NWAligner::overlapAln(const string &s1, const string &s2)
         }
 
         return AlnRes(best_i, best_j, bestScore);
+}
+
+AlnRes NWAligner::overlapAln(const NodeChain& s1, const NodeChain& s2)
+{
+        int m = s1.size(), n = s2.size();
+
+        // reserve memory (+1 for first/row column with gap penalties)
+        D.resize(m + 1, n + 1);
+
+        // initialize the borders of the matrix (suffix s1 overlaps prefix s2)
+        for (int i = 0; i <= m; i++)
+                D(i, 0) = 0;
+
+        // initialize the borders of the matrix (suffix s1 overlaps prefix s2)
+        for (int j = 0; j <= n; j++)
+                D(0, j) = j * G;
+
+        // complete the rest of the matrix
+        for (int i = 1; i <= m; i++) {
+                for (int j = 1; j <= n; j++) {
+                        int diag = D(i-1, j-1) + S(s1[i-1], s2[j-1]);
+                        int up   = D(i-1, j) + G;
+                        int left = D(i, j-1) + G;
+                        D(i, j) = max(diag, max(up, left));
+                }
+        }
+
+        // find the overlap score in the bottom row
+        int bestScore = D(m, 0); int je = 0;
+        for (int j = 1; j <= n; j++) {
+                if ((D(m, j) > bestScore)) {
+                        bestScore = D(m, j);
+                        je = j;
+                }
+        }
+
+        // coordinate ib is only computed after backtracking (see overlapBT)
+        return AlnRes(-1, m, 0, je, bestScore);
+}
+
+void NWAligner::overlapBT(const NodeChain& s1, const NodeChain& s2,
+                          AlnRes& alnRes,
+                          vector<pair<char, size_t>>& CIGAR) const
+{
+        int i = alnRes.ie;
+        int j = alnRes.je;
+
+        CIGAR.clear();
+        // we will correct later if j == s2.size()
+        CIGAR.emplace_back('D', s2.size() - j);
+
+        while (j > 0) {
+                if ((i > 0) && (D(i, j) == D(i-1, j-1) + S(s1[i-1], s2[j-1]))) {
+                        if (CIGAR.back().first != 'M')
+                                CIGAR.emplace_back('M', 0);
+                        i--;
+                        j--;
+                } else if (D(i, j) == D(i, j-1) + G) {
+                        if (CIGAR.back().first != 'D')
+                                CIGAR.emplace_back('D', 0);
+                        j--;
+                } else {
+                        if (CIGAR.back().first != 'I')
+                                CIGAR.emplace_back('I', 0);
+                        i--;
+                }
+                CIGAR.back().second++;
+        }
+
+        if (i > 0)
+                CIGAR.emplace_back('I', i);
+        reverse(CIGAR.begin(), CIGAR.end());
+        if (CIGAR.back().second == 0)
+                CIGAR.pop_back();       // correction
+
+        alnRes.ib = i;
 }

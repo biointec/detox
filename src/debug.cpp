@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -68,10 +68,9 @@ void DBGraph::sanityCheck()
                                 cerr << "\t\tNode " << id << " has a left arc "
                                         "to an invalid node\n";
 
-                        //assert(l.rightArc(id)->getCov() == it->getCov());
-                        //assert(fabs(it->getCov()-l.rightArc(id)->getCov()) <= 1e-5);
-                        if (l.rightArc(id)->getCov() != it->getCov())
-                            cout << std::setprecision(8) << l.rightArc(id)->getCov() << " != " << it->getCov() << endl;
+                        Arc* l2r = l.rightArc(id);
+                        if (l2r->getCov() != it->getCov())
+                                cout << std::setprecision(8) << l2r->getCov() << " != " << it->getCov() << endl;
 
                         Kmer lRight = l.getRightKmer();
                         lRight.pushNucleotideRight(nLeft.peekNucleotideRight());
@@ -88,10 +87,9 @@ void DBGraph::sanityCheck()
                                 cerr << "\t\tNode " << id << " has a right arc "
                                         "to an invalid node\n";
 
-                        //assert(r.leftArc(id)->getCov() == it->getCov());
-                        //assert(fabs(it->getCov()-r.leftArc(id)->getCov()) <= 1e-5);
-                        if (r.leftArc(id)->getCov() != it->getCov())
-                            cout << std::setprecision(8) << r.leftArc(id)->getCov() << " != " << it->getCov() << endl;
+                        Arc* r2l = r.leftArc(id);
+                        if (r2l->getCov() != it->getCov())
+                                cout << std::setprecision(8) << r2l->getCov() << " != " << it->getCov() << endl;
 
                         Kmer rLeft = r.getLeftKmer();
                         rLeft.pushNucleotideLeft(nRight.peekNucleotideLeft());

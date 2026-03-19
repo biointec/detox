@@ -1,5 +1,6 @@
+
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -121,7 +122,8 @@ void ReadAligner::extractSeeds(const std::string& pattern,
                                vector<GraphAln>& seeds)
 {
         // find the node position pairs using the kmer lookup table
-        vector<NodePosPair> nppv(pattern.length() + 1 - Kmer::getK());
+        size_t m = pattern.length();
+        vector<NodePosPair> nppv(m + 1 - Kmer::getK());
         findNPPFast(pattern, nppv);
 
         vector<bool> gappedSeed;
@@ -150,7 +152,7 @@ void ReadAligner::extractSeeds(const std::string& pattern,
                                 gappedSeed.back() = true;
                 } else {
                         seeds.push_back(GraphAln(curr.getNodeID(),
-                                                 nb, ne, rb, re, 0));
+                                                 nb, ne, rb, re, m, 0));
                         gappedSeed.push_back(false);
                 }
 
@@ -249,7 +251,7 @@ SearchRes ReadAligner::extendAlnDFS(GraphAln& aln, const string& P)
         // extend the alignment of the last node before commencing a DFS
         SSNode node = dBG.getSSNode(currAln.back());
 
-        string nodeStr = node.getSequence().substr(currAln.getLastNodeEnd());
+        string nodeStr = node.substr(currAln.getLastNodeEnd());
         AlnRes2 res = alignment.alignBandedContd(Psub, nodeStr, 0);
 
         currAln.extend(currAln.getLastNodeEnd() + res.lenY,
@@ -279,7 +281,7 @@ SearchRes ReadAligner::extendAlnDFS(GraphAln& aln, const string& P)
 
                 // apply current node to the alignment
                 SSNode currNode = dBG.getSSNode(currID);
-                string nodeStr = currNode.getSequence().substr(Kmer::getK()-1);
+                string nodeStr = currNode.substr(Kmer::getK()-1);
                 AlnRes2 res = alignment.alignBandedContd(Psub, nodeStr, offsetY.back());
                 currAln.extend(currID, Kmer::getK() - 1 + res.lenY - offsetY.back(),
                                initReadEnd + res.lenX, res.score);
@@ -287,12 +289,30 @@ SearchRes ReadAligner::extendAlnDFS(GraphAln& aln, const string& P)
                 offsetY.push_back(offsetY.back() + nodeStr.length());
                 //currAln.printLastNode(dBG);
 
-                // we've found a better alignment
-                if (currAln.getScore() > bestAln.getScore())
+                if (currAln.getScore() == bestAln.getScore()) { // equal score
+                        size_t i = initDepth;
+                        for ( ; i < bestAln.getDepth(); i++)
+                                if (bestAln[i] != currAln[i])
+                                        break;
+
+                        // If i == bestAln.getDepth, it means that currAln is
+                        // an extension of bestAln with the same score.
+                        // We choose to retain the shortest one (= bestAln)
+
+                        bestAln.resize(i);
+                        size_t nl = dBG.getSSNode(bestAln.back()).getMarginalLength();
+                        size_t lastNodeEnd = Kmer::getK() - 1 + nl;
+                        size_t offY = offsetY[i - initDepth];
+                        auto [s, x] = alignment.getMaxScoreAtRow(offY, Psub.size());
+                        size_t readEnd = initReadEnd + x;
+                        bestAln.extend(lastNodeEnd, readEnd, bestAln.getScore());
+                }
+
+                if (currAln.getScore() > bestAln.getScore())    // better score
                         bestAln = currAln;
 
-                // only continue further if you can possible improve the aln
-                if (res.maxAtt > bestAln.getScore())
+                // only continue further if you can possibly improve the aln
+                if ((res.maxAtt >= bestAln.getScore()) && (res.maxAtt > res.score))
                         addAlnExt(currAln, P, stack);
         }
 
@@ -321,6 +341,7 @@ void ReadAligner::alignRead(FastQRecord& record, GraphAln& bestAln,
                             AlignmentMetrics& metrics)
 {
         bestAln.clear();
+        SearchRes bestRes = EXHAUSTED;
         const string& read = record.getRead();
 
         // convert the <Node, Position> pairs into seeds (= graph alignments)
@@ -334,9 +355,14 @@ void ReadAligner::alignRead(FastQRecord& record, GraphAln& bestAln,
                 SearchRes res = extendAln(aln, read);
 
                 // save the best alignment
-                if (aln.getScore() > bestAln.getScore())
+                if (aln.getScore() > bestAln.getScore()) {
                         bestAln = aln;
+                        bestRes = res;
+                }
         }
+
+        //if (bestRes == EXHAUSTED)
+        //        bestAln.clear();
 
         string path = bestAln.getPathStr(dBG);
         string Paln = read.substr(bestAln.getReadBegin(), bestAln.getReadLen());
@@ -386,9 +412,9 @@ void ReadAlnHandler::align(LibraryContainer& libraries)
         cout << "Number of threads: " << numThreads << endl;
 
         const size_t ws = settings.getThreadIOWorkSize();
-        for (size_t i = 0; i < libraries.size(); i++) {
+        for (const Library& lib : libraries) {
                 string fn1, fn2;
-                tie(fn1, fn2) = libraries.getFilename(i);
+                tie(fn1, fn2) = lib.getFilename();
 
                 FastQReader myReader(fn1, fn2);
                 if (fn2.empty()) {
@@ -400,8 +426,7 @@ void ReadAlnHandler::align(LibraryContainer& libraries)
                              << endl;
                 }
 
-                string outfn1, outfn2;
-                tie(outfn1, outfn2) = libraries.getAlnFilename(i);
+                auto [outfn1, outfn2] = lib.getAlnFilename();
                 GraphAlnWriter myWriter(outfn1, outfn2);
                 myReader.startReaderThread(ws, ws * settings.getNumThreads());
                 myWriter.startWriterThread(settings.getNumThreads());

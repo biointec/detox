@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -39,6 +39,7 @@ private:
         size_t lastNodeEnd;     // end position of the last node
         size_t readBegin;       // begin position in the read
         size_t readEnd;         // end position of the aligned
+        size_t readLen;         // read length
         int score;              // alignment score
 
         /**
@@ -71,7 +72,7 @@ public:
          * Default constructor (empty alignment)
          */
         GraphAln() : firstNodeBegin(0), lastNodeEnd(0),
-                readBegin(0), readEnd(0), score(0) {}
+                readBegin(0), readEnd(0), readLen(0), score(0) {}
 
         /**
          * Construct a graph alignment on a single node
@@ -80,12 +81,14 @@ public:
          * @param lastNodeEnd End position of the last node
          * @param readBegin Begin position in the read
          * @param readEnd End position of the aligned
+         * @param readLen Read length
          * @param score Alignment score
          */
         GraphAln(NodeID nodeID, size_t firstNodeBegin, size_t lastNodeEnd,
-                 size_t readBegin, size_t readEnd, int score) :
+                 size_t readBegin, size_t readEnd, size_t readLen, int score) :
                  firstNodeBegin(firstNodeBegin), lastNodeEnd(lastNodeEnd),
-                 readBegin(readBegin), readEnd(readEnd), score(score) {
+                 readBegin(readBegin), readEnd(readEnd), readLen(readLen),
+                 score(score) {
                         push_back(nodeID);
         }
 
@@ -120,7 +123,7 @@ public:
          * @return The path sequence from the graph alignment
          */
         std::string getPathStr(const DBGraph& dBG) {
-                string result;
+                std::string result;
 
                 for (size_t i = 0; i < size(); i++) {
                         SSNode n = dBG.getSSNode(at(i));
@@ -252,6 +255,9 @@ public:
          * @param ofs Opened output file stream
          */
         void write(std::ofstream& ofs) const {
+                ofs << getReadBegin() << "\t" << getReadEnd() << "\t"
+                    << getFirstNodeBegin() << "\t" << getLastNodeEnd() << "\t"
+                    << readLen << "\t";
                 for (size_t i = 0; i < size(); i++) {
                         ofs << at(i);
                         if (i < size()-1)
@@ -266,6 +272,9 @@ public:
          */
         void write(SeqFile& file) const {
                 std::stringstream ss;
+                ss << getReadBegin() << "\t" << getReadEnd() << "\t"
+                   << getFirstNodeBegin() << "\t" << getLastNodeEnd() << "\t"
+                   << readLen << "\t";
                 for (size_t i = 0; i < size(); i++) {
                         ss << at(i);
                         if (i < size()-1)
@@ -321,7 +330,7 @@ public:
                         numCorrReads++;
                 this->numSubstitutions += numSubstitutions;
                 this->numIndels += numIndels;
-                maxReadLen = max<size_t>(maxReadLen, readLen);
+                maxReadLen = std::max<size_t>(maxReadLen, readLen);
                 totReadLen += readLen;
                 numReads++;
         }

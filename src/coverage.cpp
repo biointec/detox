@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -102,8 +102,10 @@ void Multiplicity::normalize()
 
 std::ostream &operator<<(std::ostream &out, const Multiplicity &m)
 {
+        cout << fixed << endl;
+        cout.precision(2);
         for (int i = 0; i < (int)m.P.size(); i++)
-                out << i+m.firstMult << "\t" << m.P[i] << "\t";
+                out << i+m.firstMult << "\t" << exp(m.P[i]) << "\t";
 
         return out;
 }
@@ -168,7 +170,7 @@ double CovModel::getLogProb(double obsCov, int mult) const
         double myLambda = (mult == 0) ? errorLambda : mult * lambda;
         double myODF = (mult == 0) ? errorODF : ODF;
         double w = (mult < (int)logw.size()) ? logw[mult] : logw.back();
-        return w + Util::logNegbinomialPDF(obsCov, myLambda, myODF * myLambda);
+        return w + Util::logNegbinomialPDF_HT(obsCov, myLambda, myODF * myLambda);
         //return log(exp(w + Util::logNegbinomialPDF(obsCov, myLambda, myODF * myLambda)) + 1e-3);
 }
 
@@ -224,14 +226,14 @@ void CovModel::writeGnuplot(const string& baseFilename,
             << "set ylabel \"number of observations\"\n"
             << "set xrange [0:" << int(logw.size() * lambda) << "]\n"
             << "set yrange [0:" << int(exp(getLogProb(lambda, 1))*2.0) << "]\n"
-            << "plot \"" << baseFilename << ".dat\" using 1:2 title \'seq. errors\' with lines,\\\n";
+            << "plot \"" << baseFilename << ".dat\" using 1:" << logw.size()+2 << " title \'k-mers\' with boxes,\\\n"
+            << "\t\"" << baseFilename << ".dat\" using 1:2 title \'seq. errors\' with lines,\\\n";
         string st = "($2";
         for (int m = 1; m < logw.size(); m++){
                 st += ("+$" + to_string(m+2));
                 ofs << "\t\"" << baseFilename << ".dat\" using 1:" << m+2 << " title \'mult = " << m << "\' with lines,\\\n";
         }
         st += ")";
-        ofs << "\t\"" << baseFilename << ".dat\" using 1:" << logw.size()+2 << " title \'k-mers\' with boxes,\\\n";
         ofs << "\t\"" << baseFilename << ".dat\" using 1:" << st << " title \'mixture\' with lines\n";
         //ofs << "pause -1\n";
 }
@@ -353,9 +355,8 @@ void DBGraph::getCovFromReads(LibraryContainer &inputs, const KmerNPPTable& tabl
         cout << "Number of threads: " << numThreads << endl;
 
         const size_t ws = settings.getThreadIOWorkSize();
-        for (size_t i = 0; i < inputs.size(); i++) {
-                string fn1, fn2;
-                tie(fn1, fn2) = inputs.getFilename(i);
+        for (const Library& lib : inputs) {
+                const auto [fn1, fn2] = lib.getFilename();
 
                 FastQReader myReader(fn1, fn2);
                 myReader.startReaderThread(ws, ws * settings.getNumThreads());

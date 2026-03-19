@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -18,46 +18,61 @@
 
 #include "dsnode.h"
 
-Arc* DSNode::arcs = NULL;
+using namespace std;
 
 bool DSNode::deleteLeftArc(NodeID targetID)
 {
-        ArcID i = leftID;
-        for ( ; i < leftID + arcInfo.p.numLeft; i++)
-                if (arcs[i].getNodeID() == targetID)
-                        break;
+        for (int i = 0; i < arcInfo.p.numLeft; i++) {
+                if (lArc[i].getNodeID() != targetID)
+                        continue;
 
-        // arc is not found, get out
-        if (i == leftID + arcInfo.p.numLeft)
-                return false;
+                // shift remaing arcs one position down
+                for (i++; i < arcInfo.p.numLeft; i++)
+                        lArc[i - 1] = lArc[i];
 
-        // shift remaing arcs one position down
-        for (i++; i < leftID + arcInfo.p.numLeft; i++)
-                arcs[i - 1] = arcs[i];
+                arcInfo.p.numLeft--;
+                lArc[arcInfo.p.numLeft].deleteArc();
+                return true;
+        }
 
-        arcInfo.p.numLeft--;
-        arcs[leftID + arcInfo.p.numLeft].deleteArc();
-
-        return true;
+        return false;   // arc is not found, get out
 }
 
 bool DSNode::deleteRightArc(NodeID targetID)
 {
-        ArcID i = rightID;
-        for ( ; i < rightID + arcInfo.p.numRight; i++)
-                if (arcs[i].getNodeID() == targetID)
-                        break;
+        for (int i = 0; i < arcInfo.p.numRight; i++) {
+                if (rArc[i].getNodeID() != targetID)
+                        continue;
 
-        // arc is not found, get out
-        if (i == rightID + arcInfo.p.numRight)
-                return false;
+                // shift remaing arcs one position down
+                for (i++; i < arcInfo.p.numRight; i++)
+                        rArc[i - 1] = rArc[i];
 
-        // shift remaing arcs one position down
-        for (i++; i < rightID + arcInfo.p.numRight; i++)
-                arcs[i - 1] = arcs[i];
+                arcInfo.p.numRight--;
+                rArc[arcInfo.p.numRight].deleteArc();
+                return true;
+        }
 
-        arcInfo.p.numRight--;
-        arcs[rightID + arcInfo.p.numRight].deleteArc();
+        return false;   // arc is not found, get out
+}
 
-        return true;
+// ============================================================================
+// HIGHER-ORDER NODE IDENTIFIER
+// ============================================================================
+
+ostream& operator<<(ostream& out, const HoNodeID &id)
+{
+        for (size_t i = 0; i < id.size(); i++)
+                out << id[i] << " ";
+        return out;
+}
+
+// ============================================================================
+// HIGHER-ORDER EDGE IDENTIFIER
+// ============================================================================
+
+ostream& operator<<(ostream& out, const HoEdgeID &id)
+{
+        cout << id.first << " --> " << id.second;
+        return out;
 }

@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -24,8 +24,19 @@
 
 #include <iostream>
 #include <vector>
+#include <limits>
 
-using namespace std;
+// ============================================================================
+// CLASS PROTOTYPES
+// ============================================================================
+
+class NodeChain;
+
+// ============================================================================
+// CIGAR STATES
+// ============================================================================
+
+enum CIGARstate { M, I, D, NOTHING };
 
 // ============================================================================
 // ALIGNMENT RESULT
@@ -44,12 +55,17 @@ public:
 
         int s1len;      // number of characters in s1 that were actually aligned
         int s2len;      // number of characters in s2 that were actually aligned
+        int ib, ie;     // part of s1 that is aligned, i.e., s1[ib, ie[
+        int jb, je;     // part of s2 that is aligned, i.e., s2[jb, je[
         int score;      // alignment score
 public:
         AlnRes() : s1len(0), s2len(0), score(0) {}
 
         AlnRes(int s1len, int s2len, int score) :
                 s1len(s1len), s2len(s2len), score(score) {}
+
+        AlnRes(int ib, int ie, int jb, int je, int score) :
+                ib(ib), ie(ie), jb(jb), je(je), score(score) {}
 };
 
 // ============================================================================
@@ -108,6 +124,15 @@ public:
                 this->numCol = numCol;
                 if (data.size() < (numRow * numCol))
                         data.resize(numRow * numCol);
+        }
+
+        /**
+         * Set all elements of a matrix to a target value
+         * @param target Target value
+         */
+        void fill(const T& target) {
+                for (size_t i = 0; i < numRow * numCol; i++)
+                        data[i] = target;
         }
 
         /**
@@ -217,7 +242,7 @@ public:
          * @param s2 Second string to align
          * @return The alignment score (higher is better)
          */
-        AlnRes align(const string &s1, const string &s2);
+        AlnRes align(const std::string &s1, const std::string &s2);
 
         /**
          * Get the match score (positive number)
@@ -239,7 +264,8 @@ public:
          * Print matrix to stdout
          */
         void printAlignment(const AlnRes& alnRes,
-                            const string &s1, const string &s2) const;
+                            const std::string &s1,
+                            const std::string &s2) const;
 
         /**
          * Remove trailing gaps from the alignment
@@ -253,20 +279,14 @@ public:
          */
         void printMatrix(const AlnRes& alnRes) const;
 
-        /**
-         *
-         *
-         */
-        //AlnRes trimTrailingGapsS2(const string& s1, const string& s2) const;
-
         int operator() (int i, int j) const {
-                int k = max(i, j);
+                int k = std::max(i, j);
                 int l = maxIndel - i + j;
                 return matrix[k * (2 * maxIndel + 1) + l];
         }
 
         int& operator() (int i, int j) {
-                int k = max(i, j);
+                int k = std::max(i, j);
                 int l = maxIndel - i + j;
                 return matrix[k * (2 * maxIndel + 1) + l];
         }
@@ -277,7 +297,7 @@ public:
          * @param s2 Second string
          * @return The alignment score (higher is better)
          */
-        int alignBanded(const string &s1, const string &s2);
+        int alignBanded(const std::string &s1, const std::string &s2);
 
         /**
          * Continue a banded alignment between two sequences
@@ -287,7 +307,35 @@ public:
          * in previous calls, alignment will be appended
          * @return The alignment result
          */
-        AlnRes2 alignBandedContd(const string& X, const string& Y, int offsetY);
+        AlnRes2 alignBandedContd(const std::string& X, const std::string& Y,
+                                 int offsetY);
+
+        /**
+         * Get the maximum score / score position at a specific row
+         * @param row Desired row index
+         * @param sizeX Size of sequence X (horizontal)
+         * @return pair <maxScore, column index>
+         */
+        std::pair<int, int> getMaxScoreAtRow(int row, int sizeX)
+        {
+                NWAligner& F = *this;   // shorthand notation
+                std::pair<int, int> res(std::numeric_limits<int>::min(), 0);
+
+                const int jBegin = std::max<int>(0, row - maxIndel);
+                const int jMid   = std::min<int>(sizeX, row);
+                const int jLast  = std::min<int>(sizeX, row + maxIndel);
+                // in case of ex-aequo, report position closest to the middle
+                for (int j = jBegin; j <= jMid; j++)
+                        if (res.first <= F(row, j))
+                                res = std::make_pair(F(row, j), j);
+                for (int j = jMid + 1; j <= jLast; j++)
+                        if (res.first < F(row, j))
+                                res = std::make_pair(F(row, j), j);
+                return res;
+        }
+
+        AlnRes2 alignBandedContdFullY(const std::string& X, const std::string& Y,
+                                      int offsetY);
 
         /**
          * Global alignment but don't penalize trailing gaps in either s1 OR s2
@@ -295,7 +343,7 @@ public:
          * @param s2 Second string
          * @return The alignment result
          */
-        AlnRes alnGlobFreeEndGap(const string &s1, const string &s2);
+        AlnRes alnGlobFreeEndGap(const std::string &s1, const std::string &s2);
 
         /**
          * Global alignment but don't penalize trailing gaps in s1
@@ -303,7 +351,8 @@ public:
          * @param s2 Second string
          * @return The alignment result
          */
-        AlnRes alnGlobFreeEndGapS2(const string &s1, const string &s2);
+        AlnRes alnGlobFreeEndGapS2(const std::string &s1,
+                                   const std::string &s2);
 
         /**
          * Get the maximal attainable score
@@ -317,7 +366,8 @@ public:
         /**
          * Print matrix to stdout
          */
-        void printAlignmentBanded(const string &s1, const string &s2) const;
+        void printAlignmentBanded(const std::string &s1,
+                                  const std::string &s2) const;
 
         /**
          * Get the number of matches, substitutions and indels in the alignment
@@ -327,8 +377,8 @@ public:
          * @param nSubst Number of substitutions (output)
          * @param nIndel Number of indels (output)
          */
-        void getAlnStats(const string& s1, const string& s2, size_t& nMatch,
-                         size_t& nSubst, size_t& nIndel) const;
+        void getAlnStats(const std::string& s1, const std::string& s2,
+                         size_t& nMatch, size_t& nSubst, size_t& nIndel) const;
 
         /**
          * Overlap alignment
@@ -336,7 +386,26 @@ public:
          * @param s2 Second string
          * @return The alignment result
          */
-        AlnRes overlapAln(const string &s1, const string &s2);
+        AlnRes overlapAln(const std::string &s1, const std::string &s2);
+
+        /**
+         * Overlap alignment between two node chains (score computation)
+         * @param s1 Leftmost node chain
+         * @param s2 Rightmost node chain
+         * @return The alignment result (only ie, je and score are computed)
+         */
+        AlnRes overlapAln(const NodeChain& s1, const NodeChain& s2);
+
+        /**
+         * Overlap alignment between two node chains (backtracking)
+         * @param s1 Leftmost node chain
+         * @param s2 Rightmost node chain
+         * @param AlnRes Alignment result (input/output: ib and jb are computed)
+         * @param CIGAR CIGAR string (output)
+
+         */
+        void overlapBT(const NodeChain& s1, const NodeChain& s2, AlnRes& alnRes,
+                       std::vector<std::pair<char, size_t>>& CIGAR) const;
 };
 
 #endif

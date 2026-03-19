@@ -1,7 +1,4 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
- *   This file is part of Detox    
- * 
  *  This program is free software: you can redistribute it and/or modify      *
  *  it under the terms of the GNU Affero General Public License as            *
  *  published by the Free Software Foundation, either version 3 of the        *
@@ -320,66 +317,6 @@ public:
          * Join the writer thread
          */
         void joinWriterThread();
-};
-
-// ============================================================================
-// LIBRARY CONTAINER CLASS
-// ============================================================================
-
-class LibraryContainer
-{
-private:
-        typedef std::pair<std::string, std::string> pairOfStrings;
-
-        // List of libraries stored as pairs-of-strings. In case of single-end
-        // reads, the second filename is simply empty
-        std::vector<pairOfStrings> filename;
-        std::vector<pairOfStrings> baseFilename;
-
-public:
-        /**
-         * Constructor
-         * @param manifestFilename Read filename
-         */
-        LibraryContainer(const std::string& manifestFilename);
-
-        /**
-         * Get the number of libraries
-         * @return The number of libraries
-         */
-        size_t size() const {
-                return filename.size();
-        }
-
-        /**
-         * Get the filename(s) for a specified library
-         * @param index Input identifier
-         * @return The filename(s) as a pair-of-strings
-         */
-        const pairOfStrings& getFilename(size_t index) const {
-                return filename.at(index);
-        }
-
-        /**
-         * Get the alignment filename(s) for a specified library
-         * @param index Input identifier
-         * @return The alignment filename(s) as a pair-of-strings
-         */
-        pairOfStrings getAlnFilename(size_t index) const {
-                pairOfStrings base = baseFilename.at(index);
-                return (base.second.empty()) ?
-                        pairOfStrings(base.first + ".aln", std::string()) :
-                        pairOfStrings(base.first + ".aln", base.second + ".aln");
-        }
-
-        /**
-         * Get the base filename(s) for a specified library
-         * @param index Input identifier
-         * @return The base filename(s) as a pair-of-strings
-         */
-        const pairOfStrings& getBaseFilename(size_t index) const {
-                return baseFilename.at(index);
-        }
 };
 
 #endif

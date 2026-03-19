@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -29,8 +29,6 @@
 #include "pgm/factor.h"
 #include "dbgraph.h"
 #include "bitvec.h"
-#include "libdai/dai/factorgraph.h"
-#include "libdai/dai/factor.h"
 
 // ============================================================================
 // CLASS PROTOTYPES
@@ -40,37 +38,6 @@ class DBGraph;
 class WorkLoadBalancer;
 class NodeRep;
 class EdgeRep;
-
-// ============================================================================
-// DIJKSTRA AUXILIARY CLASSES
-// ============================================================================
-
-class PathDFS {
-
-public:
-        NodeID nodeID;          // current node identifier
-        NodeID prevID;          // previous node identifier
-        size_t length;          // length to current node
-
-        /**
-         * Default constructor
-         * @param nodeID node identifier
-         * @param prevID previous node identifier
-         * @param length length to the current node
-         */
-        PathDFS(NodeID nodeID, NodeID prevID, size_t length) :
-                nodeID(nodeID), prevID(prevID), length(length) {};
-};
-
-struct PathDFSComp {
-
-        /**
-         * Compare two paths (by length) (strict weak ordering (irreflexive))
-         */
-        bool operator()(const PathDFS& f, const PathDFS& s) {
-                return f.length > s.length;
-        }
-};
 
 // ============================================================================
 // CRF PERFORMANCE COUNTER
@@ -136,13 +103,45 @@ private:
         int multMargin;                 // number of alt mult (one-sided)
         size_t maxFactorSize;           // maximum size of intermediate factor
         double flowStrength;            // value in flow-cpd when mults do not agree
+        static double logFS;            // log(flowStrength)
 
         // containers below are class members to allow their reuse over many
         // multiplicity computations, thus avoiding repeated (de)allocation
         std::vector<NodeRep> nodes;     // nodes in subgraph
         std::vector<EdgeRep> edges;     // edges in subgraph
-        std::priority_queue<NodeDFS, std::vector<NodeDFS>, NodeDFSComp> pq;
+        std::priority_queue<NodeDepth, std::vector<NodeDepth>, NodeDepthComp> pq;
         Bitvec bitvec;
+
+        /**
+         * @brief Given two multiplicities, get the log-flow-conservation factor
+         * @param m1 First multiplicity
+         * @param m2 Second multiplicity
+         * @return Flow-conservation factor (log-space)
+         */
+        static double getLogFlowStrength(int m1, int m2)
+        {
+                const double logTen = 2.302585093; // log(10)
+
+                // identifical multiplicities
+                if (m1 == m2)
+                        return 0.0;     // log(1)
+
+                // minVal accounts for the difficulty to disambiguate between
+                // higher multiplicities (e.g. 11 and 12)
+                int minVal = std::min<int>(m1, m2);
+
+                // delta account for how severe the difference between
+                // multiplicities is
+                int delta = abs(m1 - m2);
+
+                // compute log(1/flowStrength * 10^minVal/10^delta)
+                int exp = minVal - delta;
+                double result = -logFS;
+                result += exp * logTen;
+
+                // make sure the flow penalty does not exceed 0.1
+                return std::min<double>(-logTen, result);
+        }
 
         /**
          * Get a singleton factor with a multinomial over multiplicities
@@ -150,28 +149,15 @@ private:
          * @param card Variable cardinality
          * @param firstMult Multiplicity of the first value
          * @param covModel Coverage model
-         * @param numObs Number of observations
-         * @param numIndepOb FIXME !!!
+         * @param obsCov Observed coverage
+         * @param numIndepOb Number of independent observations
+         * @param tip True for a node that is a (short) tip
          * @return Singleton multiplicity factor
          */
         static Factor createSingletonFactor(int varID, int card, int firstMult,
                                             const CovModel& covModel,
-                                            double numObs, int numIndepObs);
-
-        /**
-         * Get a Libdai format singleton factor with a multinomial over multiplicities
-         * @param varID Variable identifier
-         * @param varcard Variable cardinality
-         * @param firstMult Multiplicity of the first value
-         * @param covModel Coverage model
-         * @param numObs Number of observations
-         * @param numIndepOb FIXME !!!
-         * @return Singleton multiplicity factor
-         */
-        static dai::Factor createLDSingletonFactor(int varID, int varCard, int firstMult,
-                                                   const CovModel& covModel,
-                                                   const double numObs, int numIndepObs);
-
+                                            double obsCov, int numIndepObs,
+                                            bool tip);
 
         /**
          * Get a flow-conservation factor
@@ -188,27 +174,7 @@ private:
                                        const std::vector<int>& termVarID,
                                        const std::vector<int>& termCard,
                                        const std::vector<int>& termFirstMult,
-                                       const std::vector<bool>& palindromic,
-                                       double flowStrength);
-        
-        /**
-         * Get a Libdai format flow-conservation factor
-         * @param sumVarID Variable identifier of the sum
-         * @param sumCard Cardinality of the sum variable
-         * @param sumFirstMult Multiplicity of the first sum value
-         * @param termVarID Variable identifiers of the terms
-         * @param termCard Cardinality of the term variables
-         * @param termFirstMult Multiplicity of the first term values
-         * @param palindromic Is the edge palindromic
-         * @return Flow-conservation factor
-         */
-        static dai::Factor createLDFlowFactor(int sumVarID, int sumCard, int sumFirstMult,
-                                       const std::vector<int>& termVarID,
-                                       const std::vector<int>& termCard,
-                                       const std::vector<int>& termFirstMult,
-                                       const std::vector<bool>& palindromic,
-                                       double flowStrength);
-        
+                                       const std::vector<bool>& palindromic);
 
         /**
          * Internal function to find a CRF-compliant subgraph.
@@ -262,15 +228,12 @@ public:
         CRFSolver(const DBGraph& dBG, int multMargin, size_t maxFactorSize,
                   double flowStrength) : dBG(dBG), multMargin(multMargin),
                   maxFactorSize(maxFactorSize), flowStrength(flowStrength),
-                  bitvec(dBG.getNumNodes()+1) {}
-                  
-        CRFSolver(const DBGraph& dBG, int multMargin, size_t maxFactorSize,
-                  double flowStrength, const std::vector<NodeRep>& n, const std::vector<EdgeRep>& e) : dBG(dBG), multMargin(multMargin),
-                            maxFactorSize(maxFactorSize), flowStrength(flowStrength), nodes(n), edges(e),
-                            bitvec(dBG.getNumNodes()+1) {}
+                  bitvec(dBG.getNumNodes()+1) {
+                CRFSolver::logFS = log(flowStrength);
+        }
 
         /**
-         * Compute the node multiplicity using a CRF model
+         * Check the conservation of flow for a node
          * @param node Node
          * @param nodeCovModel Node coverage model
          * @param edgeCovModel Node coverage model
@@ -278,6 +241,17 @@ public:
          * @return true of false (when flow is not conserved)
          */
         bool checkFlow(NodeRep node, const CovModel& nodeCovModel,
+                       const CovModel& edgeCovModel, int graphDepth);
+
+        /**
+         * Check the conservation of flow for an edge
+         * @param edge Edge
+         * @param nodeCovModel Node coverage model
+         * @param edgeCovModel Node coverage model
+         * @param graphDepth CRF graph depth (in terms of number of nodes)
+         * @return true of false (when flow is not conserved)
+         */
+        bool checkFlow(EdgeRep edge, const CovModel& nodeCovModel,
                        const CovModel& edgeCovModel, int graphDepth);
 
         /**
@@ -303,46 +277,6 @@ public:
                                          const CovModel& nodeCovModel,
                                          const CovModel& edgeCovModel,
                                          int graphDepth);
-        
-        /**
-         * Create a factor graph for the full dBG
-         * 
-         */
-        dai::FactorGraph getLibdaiFG(const std::map<NodeRep, int>& node2var,
-                                     const std::map<EdgeRep,int>& edge2var,
-                                     std::vector<int>& firstMult,
-                                     const CovModel& nodeCovModel,
-                                     const CovModel& edgeCovModel);
-        
-	/*
-	 * Approximate inference on a subgraph to be used for the cytoscape graph
-	 * Pass along the nodes and edges ID vector to determine correct order for node and edge Mult
-	 * because we need the outer edges for the crf, the subgraph will be extracted anew: 
-	 * thus central node and required graph depth need to be passed again.
-	 */
-	void approxSubgraphMult(NodeRep node,
-				NodeMap<Multiplicity>& nodeMult,
-				EdgeMap<Multiplicity>& edgeMult,
-				const CovModel& nodeCovModel,
-				const CovModel& edgeCovModel,
-				int graphDepth, bool MAP);
-        /**
-         * Get subgraph from the de Bruijn graph 
-         * that contains all nodes reachable from seedNode
-         * @param seedNode Seed node representative
-         */
-        std::vector<NodeID> getFullConnectedComponent(NodeRep seedNode);
-        
-        /**
-         * Use approximate inference to compute te multiplicities of the passed nodes
-         * and arcs. Assumes that these form a connected subgraph
-         */
-        void approxMult(NodeMap<Multiplicity>& nodeMult,
-                        const CovModel& nodeCovModel,
-                        EdgeMap<Multiplicity>& edgeMult,
-                        const CovModel& edgeCovModel, 
-                        std::string modelID,
-                        bool MAP, bool visualise = false);
 };
 
 // ============================================================================
@@ -376,6 +310,22 @@ private:
         void checkNodeFlow(CRFSolver& solver,
                            WorkLoadBalancer& wlb,
                            const std::vector<NodeRep>& nodes,
+                           const CovModel& nodeCovModel,
+                           const CovModel& edgeCovModel,
+                           std::vector<bool>& flowOK) const;
+
+        /**
+         * Compute the edge conservation of flow
+         * @param solver Per-thread solver
+         * @param wlb Reference to the workload balancer
+         * @param edges Edges to handle
+         * @param nodeCovModel Node coverage model
+         * @param edgeCovModel Node coverage model
+         * @param flowOK Flag to indicate whether or not the flow is OK
+         */
+        void checkEdgeFlow(CRFSolver& solver,
+                           WorkLoadBalancer& wlb,
+                           const std::vector<EdgeRep>& edges,
                            const CovModel& nodeCovModel,
                            const CovModel& edgeCovModel,
                            std::vector<bool>& flowOK) const;
@@ -422,9 +372,7 @@ private:
         bool Estep(NodeMap<Multiplicity>& nodeMult,
                    const CovModel& nodeCovModel,
                    EdgeMap<Multiplicity>& edgeMult,
-                   const CovModel& edgeCovModel,
-                   double epsilon, bool approxInf = false,
-                   bool map = false) const;
+                   const CovModel& edgeCovModel, double epsilon) const;
 
         /**
          * Update the node/edge models given the multiplicities
@@ -432,14 +380,15 @@ private:
          * @param nodeCovModel Node coverage model (input/output)
          * @param edgeMult Estimated edge multiplicity
          * @param edgeCovModel Edge coverage model (input/output)
+         * @param trainNodeODF True of the node ODF should be estimated
          * @param epsilon Tolerance on the lambda_1 estimate
          * @return True if the lambda_1 component change is > epsilon
          */
         bool Mstep(const NodeMap<Multiplicity>& nodeMult,
                    CovModel& nodeCovModel,
                    const EdgeMap<Multiplicity>& edgeMult,
-                   CovModel& edgeCovModel, double epsilon, 
-                   bool fixedZero = false) const;
+                   CovModel& edgeCovModel,
+                   bool trainNodeODF, double epsilon) const;
 
 public:
         /**
@@ -453,9 +402,18 @@ public:
          */
         CRFMult(const DBGraph& dBG, int maxGraphDepth,
                 int multMargin, size_t maxFactorSize, double flowStrength,
-                size_t numThreads = 1, size_t threadWork = 1000) : dBG(dBG), maxGraphDepth(maxGraphDepth),
-                multMargin(multMargin), maxFactorSize(maxFactorSize), flowStrength(flowStrength),
+                size_t numThreads = 1, size_t threadWork = 1000) : dBG(dBG),
+                maxGraphDepth(maxGraphDepth), multMargin(multMargin),
+                maxFactorSize(maxFactorSize), flowStrength(flowStrength),
                 numThreads(numThreads), threadWork(threadWork) {}
+
+        /**
+         * Get the maximum graph depth
+         * @return The maximum graph depth
+         */
+        int getMaxGraphDepth() const {
+                return maxGraphDepth;
+        }
 
         /**
          * Check whether the flow around a set of nodes is OK
@@ -470,33 +428,38 @@ public:
                        const CovModel& edgeCovModel) const;
 
         /**
+         * Check whether the flow around a set of edges is OK
+         * @param edges Edges to handle
+         * @param flowOK Flag to indicate whether or not the flow is OK
+         * @param nodeCovModel Node coverage model
+         * @param edgeCovModel Edge coverage model
+         */
+        void checkFlow(const std::vector<EdgeRep>& edges,
+                       std::vector<bool>& flowOK,
+                       const CovModel& nodeCovModel,
+                       const CovModel& edgeCovModel) const;
+
+        /**
          * Compute the normalized node/edge multiplicities
          * @param nodeMult Estimated node multiplicity (input/output)
          * @param nodeCovModel Node coverage model
          * @param edgeMult Estimated edge multiplicity (input/output)
          * @param edgeCovModel Edge coverage model
+         * @param silent Set to true to mute standard output
          */
         void computeMult(NodeMap<Multiplicity>& nodeMult,
                          const CovModel& nodeCovModel,
                          EdgeMap<Multiplicity>& edgeMult,
-                         const CovModel& edgeCovModel) const;
+                         const CovModel& edgeCovModel,
+                         bool silent = false) const;
 
-        /**
-         * Uses approximate inference to compute all multiplicities in the dBG 
-         * After computations, nodeMult and edgeMult will have entries for all valid nodes/arcs
-         */
-        void approxMultAll(NodeMap<Multiplicity>& nodeMult,
-                           const CovModel& nodeCovModel,
-                           EdgeMap<Multiplicity>& edgeMult,
-                           const CovModel& edgeCovModel,
-                           bool MAP=false, bool singleCRF=false) const;
-                           
         /**
          * Compute the multiplicities and models using expectation-maximization
          * @param nodeMult Estimated normalized node multiplicity (input/output)
          * @param nodeCovModel Node coverage model (input/output)
          * @param edgeMult Estimated normalized edge multiplicity (input/output)
          * @param edgeCovModel Edge coverage model (input/output)
+         * @param trainNodeODF True of the node ODF should be estimated
          * @param epsilon Tolerance on the lambda_1 estimate
          * @param maxIter Maximum number of iterations
          */
@@ -504,9 +467,8 @@ public:
                           CovModel& nodeCovModel,
                           EdgeMap<Multiplicity>& edgeMult,
                           CovModel& edgeCovModel,
-                          double epsilon, int maxIter,
-                          bool approxInf = false, bool map = false,
-                          bool fixedZero = false);
+                          bool trainNodeODF,
+                          double epsilon, int maxIter);
 
         /**
          * Get the CRF performance counter

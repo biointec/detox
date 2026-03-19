@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -384,7 +384,7 @@ struct TKmerHash {
 // TKMER CLASS
 // ============================================================================
 
-template<size_t numBytes> size_t TKmer<numBytes>::k = 4*numBytes - 1;
+template<size_t numBytes> size_t TKmer<numBytes>::k = 21;
 template<size_t numBytes> size_t TKmer<numBytes>::kMSB = k / 4;
 template<size_t numBytes> size_t TKmer<numBytes>::kMSLL = k / 32;
 

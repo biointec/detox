@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -208,6 +208,14 @@ public:
         }
 
         /**
+         * Get a reference to the node alignments
+         * @return A const-reference to the node alignments
+         */
+        std::vector<NodeAlignment>& getPath() {
+                return path;
+        }
+
+        /**
          * Get a vector containing the alignment in k-mer space
          * @param kmerNPP Vector with the alignment as a chain of kmer NPPs (output)
          */
@@ -240,7 +248,8 @@ private:
          * Visualize a node alignment
          */
         void visualizeNodeAln(const NodeAlignment& nodeAln,
-                              const GraphAlignment& ga, const string& P) const;
+                              const GraphAlignment& ga,
+                              const std::string& P) const;
 
         /**
          * Given a pattern and a partial graph alignment, return the maximum

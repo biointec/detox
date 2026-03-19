@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -21,6 +21,7 @@
 
 #include <string>
 #include <algorithm>
+#include <cstdint>
 
 // ============================================================================
 // DEFINITIONS
@@ -137,9 +138,9 @@ public:
         }
 
         /**
-        * Convert a nucleotide into its reverse complement
+         * Convert a nucleotide into its complement
          * @param n ASCII encoding of 'A', 'C', 'G' and 'T'
-         * @return ASCII encoding of the reverse complement
+         * @return ASCII encoding of the complement
          */
         static char getComplement(char c) {
                 uint8_t n = (uint8_t)charToNucleotide(c);
@@ -147,7 +148,7 @@ public:
         }
 
         /**
-         * Convert a two bit encoded nucleotide into its reverse complement
+         * Convert a two bit encoded nucleotide into its complement
          * @param n Two bit encoded nucleotide
          * @return Two bit encoded complement
          */

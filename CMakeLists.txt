@@ -1,10 +1,10 @@
 # CMake compatibility issues: don't modify this, please!
-cmake_minimum_required(VERSION 2.6.3)
+cmake_minimum_required(VERSION 2.8...3.5)
 
 project(DETOX)
 
 # project version
-set(${PROJECT_NAME}_MAJOR_VERSION 2)
+set(${PROJECT_NAME}_MAJOR_VERSION 1)
 set(${PROJECT_NAME}_MINOR_VERSION 0)
 set(${PROJECT_NAME}_PATCH_LEVEL 0)
 
@@ -12,6 +12,9 @@ set(${PROJECT_NAME}_PATCH_LEVEL 0)
 add_definitions("-D${PROJECT_NAME}_MAJOR_VERSION=${${PROJECT_NAME}_MAJOR_VERSION}")
 add_definitions("-D${PROJECT_NAME}_MINOR_VERSION=${${PROJECT_NAME}_MINOR_VERSION}")
 add_definitions("-D${PROJECT_NAME}_PATCH_LEVEL=${${PROJECT_NAME}_PATCH_LEVEL}")
+
+# enable C++17
+set(CMAKE_CXX_STANDARD 17)
 
 # set the default configuration to Release
 if(NOT CMAKE_BUILD_TYPE)
@@ -35,6 +38,20 @@ if (ZLIB_FOUND)
     add_definitions(-DHAVE_ZLIB)
     include_directories(${ZLIB_INCLUDE_DIR})
 endif(ZLIB_FOUND)
+
+# check if torchlib is present
+find_package(Torch QUIET)
+if (TORCH_FOUND)
+    add_definitions(-DHAVE_TORCH)
+    include_directories(${TORCH_INCLUDE_DIRS})
+    message(STATUS "Torch found, enabling Torch support")
+else(TORCH_FOUND)
+    message(STATUS "WARNING: Torch (libtorch) not found.\n    Provide the "
+            "-DCMAKE_PREFIX_PATH=/path/to/libtorch option to cmake to specify "
+            "its location\n"
+            "    For now, Detox will build without Torch support")
+
+endif(TORCH_FOUND)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 

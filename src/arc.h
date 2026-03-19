@@ -1,5 +1,5 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
+ *   Copyright (C) 2014 - 2020 Jan Fostier (jan.fostier@ugent.be)             *
  *   This file is part of Detox                                               *
  *                                                                            *
  *   This program is free software; you can redistribute it and/or modify     *
@@ -109,10 +109,6 @@ public:
                         return srcID < rhs.srcID;
                 return dstID < rhs.dstID;
         }
-        
-        operator std::pair<NodeID, NodeID>() const {
-                return std::pair<NodeID, NodeID>(srcID, dstID);
-        }
 
         /**
          * Compute a hash function
@@ -156,12 +152,33 @@ struct EdgeHash {
         }
 };
 
+struct BiEdgeHash {
+        size_t operator()(const EdgeID &eID) const
+        {
+                size_t w = (size_t(eID.first) << 32) + size_t(eID.second);
+                size_t hash = 0;
+                w = ~w + (w << 21);             // key = (key << 21) - key - 1;
+                w = w ^ (w >> 24);
+                w = (w + (w << 3)) + (w << 8);  // key * 265
+                w = w ^ (w >> 14);
+                w = (w + (w << 2)) + (w << 4);  // key * 21
+                w = w ^ (w >> 28);
+                w = w + (w << 31);
+                hash = hash ^ size_t(w);
+
+                return hash;
+        }
+};
+
 // ============================================================================
 // EDGE MAP
 // ============================================================================
 
 template<class T>
 using EdgeMap = google::sparse_hash_map<EdgeRep, T, EdgeHash>;
+
+template<class T>
+using BiEdgeMap = google::sparse_hash_map<EdgeID, T, BiEdgeHash>;
 
 // ============================================================================
 // ARC CLASS

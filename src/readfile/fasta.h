@@ -1,7 +1,4 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
- *   This file is part of Detox    
- * 
  *  This program is free software: you can redistribute it and/or modify      *
  *  it under the terms of the GNU Affero General Public License as            *
  *  published by the Free Software Foundation, either version 3 of the        *
@@ -32,35 +29,47 @@ class SeqFile;
 // FASTA RECORD
 // ============================================================================
 
-class FastARecord {
-
-private:
-        std::string seqID;      // sequence identifier
-        std::string read;       // read itself
+class FastARecord : public std::pair<std::string, std::string> {
 
 public:
         /**
          * Clear the record
          */
         void clear() {
-                seqID.clear();
-                read.clear();
+                first.clear();
+                second.clear();
         }
 
         /**
          * Get a const-reference to the sequence identifier
          * @return a const-reference to the sequence identifier
          */
-        const std::string& getSeqID() const {
-                return seqID;
+        const std::string& getID() const {
+                return first;
+        }
+
+        /**
+         * Get a reference to the sequence identifier
+         * @return a reference to the sequence identifier
+         */
+        std::string& getID() {
+                return first;
         }
 
         /**
          * Get a const-reference to the read
          * @return a const-reference to the read
          */
-        const std::string& getRead() const {
-                return read;
+        const std::string& getSequence() const {
+                return second;
+        }
+
+        /**
+         * Get a reference to the read
+         * @return a reference to the read
+         */
+        std::string& getSequence() {
+                return second;
         }
 
         /**

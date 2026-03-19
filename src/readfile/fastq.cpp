@@ -1,7 +1,4 @@
 /******************************************************************************
- *   Copyright (C) 2014 - 2022 Jan Fostier (jan.fostier@ugent.be)             *
- *   This file is part of Detox    
- * 
  *  This program is free software: you can redistribute it and/or modify      *
  *  it under the terms of the GNU Affero General Public License as            *
  *  published by the Free Software Foundation, either version 3 of the        *
@@ -407,43 +404,4 @@ void FastQWriter::joinWriterThread()
         outputLock.unlock();
 
         oThread.join();
-}
-
-// ============================================================================
-// LIBRARY CONTAINER CLASS
-// ============================================================================
-
-LibraryContainer::LibraryContainer(const std::string& mf)
-{
-        try {                           // option A: mf is a FastQ file
-                FastQReader reader(mf, "");
-                filename.push_back(make_pair(mf, ""));
-                baseFilename.push_back(reader.getBaseFilename());
-        } catch (exception& e) {        // option B: mf is a manifest file
-                ifstream ifs(mf);
-                if (!ifs)
-                        throw runtime_error("cannot open file " + mf);
-
-                string line;
-                while (getline(ifs, line)) {
-                        if (line.empty())
-                                continue;
-                        const string tokens = " \t,;";
-                        size_t first = line.find_first_of(tokens);
-                        size_t last  = line.find_last_of(tokens);
-
-                        // no delimiter -> single-ended reads
-                        if (last >= line.size()) {
-                                FastQReader reader(line, "");
-                                filename.push_back(reader.getFilename());
-                                baseFilename.push_back(reader.getBaseFilename());
-                        } else {        // paired-end reads
-                                string file1 = line.substr(0, first);
-                                string file2 = line.substr(last+1);
-                                FastQReader reader(file1, file2);
-                                filename.push_back(reader.getFilename());
-                                baseFilename.push_back(reader.getBaseFilename());
-                        }
-                }
-        }
 }
